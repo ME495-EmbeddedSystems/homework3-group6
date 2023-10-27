@@ -3,11 +3,14 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
-from moveit_msgs.msg import PlannerParams
+# https://wiki.ros.org/moveit_msgs
+from moveit_msgs.msg import PlannerParams, MotionPlanRequest, WorkplaceParameters, Constraints
 from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterface, GetCartesianPath
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 
-# moveit.picknik.ai/main/html/move__group__interface_8cpp_source.html
+# https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/include/moveit/move_group_interface/move_group_interface.h
+# https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/src/move_group_interface.cpp
+# https://docs.ros.org/en/noetic/api/moveit_ros_planning_interface/html/move__group__interface_8cpp_source.html#l00407
 """
 /planning_scene
 /planning_scene_world
@@ -35,18 +38,25 @@ Services
 
 
 """
+class options():
 
+    def __init__(self, group_name, desc="robot_description", move_group_namespace="")
+        self.group_name_ = group_name
+        self.robot_description = desc
+        self.namespace = move_group_namespace
 
-class MoveGroupInterface(Node, options, tf_buffer, wait_for_servers):
+class MoveGroupInterface():
 
-    def __init__(self):
+    def __init__(self, node, options, tf_buffer, wait_for_servers):
         self.opt_ = self.options
-        self.node_ = Node
+        self.node_ = node
         self.tf_buffer_ = tf_buffer
         self.wait_for_servers_ = wait_for_servers
         self.namespace_ = opt.namespace
+        self.robot_description_ = self.opt_.robot_description
 
-        self.logger_ = self.node.get_logger()
+        self.logger_ = self.node_.get_logger()
+        self.clock_ = self.node_.get_clock()
         self.cb_group_ = MutuallyExclusiveCallbackGroup()
         
         # Available options, can redo / ignore some
@@ -54,6 +64,17 @@ class MoveGroupInterface(Node, options, tf_buffer, wait_for_servers):
         # opt.robot_model
         # opt.robot_description
         # opt.namespace
+
+        # self.pose_targets_
+        # self.end_effector_link_
+        # self.pose_reference_frame_
+        # self.target_type_
+        # self.start_state_
+        # 
+
+        self.planning_pipeline_id_ = ""
+        self.planner_id_ = ""
+        self.workspace_parameters_ = WorkplaceParameters()
 
         self.can_look_ = False
         self.look_around_attempts_ = 0
@@ -66,8 +87,8 @@ class MoveGroupInterface(Node, options, tf_buffer, wait_for_servers):
         self.allowed_planning_time_ = 5.0
         self.num_planning_attemps_ = 1
         
-        self.velocity_scaling_factor_ = self.node_.get_parameter("velocity_scaling_factor").get_parameter_value().double_value
-        self.acceleration_scaling_factor_ = self.node_.get_parameter("acceleration_scaling_factor").get_parameter_value().double_value
+        self.max_velocity_scaling_factor_ = self.node_.get_parameter("velocity_scaling_factor").get_parameter_value().double_value
+        self.max_acceleration_scaling_factor_ = self.node_.get_parameter("acceleration_scaling_factor").get_parameter_value().double_value
 
         self.initalizing_constraints_ = False
 
@@ -112,7 +133,29 @@ class MoveGroupInterface(Node, options, tf_buffer, wait_for_servers):
 
         if(future_gpp_response.valid()):
             return future_gpp_response.get()
+    def setPlanningPipelineID(self, pipeline_id):
+        if isinstance(pipeline_id, str):
+            if(pipeline_id != planning_pipeline_id_):
+                self.planning_pipeline_id_ = pipeline_id
+                self.planner_id_ = ""
+        else:
+            self.logger_.error("Attempt to set planning_pipeline_id to invalid type")
+    def getPlanningPipelineID(self):
+        return self.planning_pipeline_id_
     
+    def getDefaultPlannerID(self, group):
+        default_planner_id = self.node_.get_parameter("move_group/default_planning_pipeline").get_parameter_value().string_value
+        return default_planner_id
+
+    def setPlannerId(self,n):
+        if isinstance(n, str):
+            self.planner_id_ = n
+        else:
+            self.logger_.error("Attempt to set planner_id to invalid type")
+    
+    def getPlannerId(self):
+        return self.planner_id_
+
     def setCanLook(self, n):
         if isinstance(n, bool):
             self.can_look_ = n
@@ -197,6 +240,40 @@ class MoveGroupInterface(Node, options, tf_buffer, wait_for_servers):
             self.logger_.error("Attempt to set num_planning_attempts to invalid type")
     def getNumPlanningAttemps(self):
         return self.num_planning_attemps_
+    
+    def constructMotionPlanRequest(self):
+        request = MotionPlanRequest()
+        request.group_name = self.group_name_
+        request.num_planning_attempts = self.num_planning_attemps_
+        request.max_velocity_scaling_factor = self.max_velocity_scaling_factor_
+        request.max_acceleration_scaling_factor = self.max_acceleration_scaling_factor_
+        request.allowed_planning_time = self.allowed_planning_time_
+        request.pipeline_id = self.planning_pipeline_id_
+        request.planner_id = self.planner_id_
+        request.workspace_parameters = self.workspace_parameters_
+        request.start_state = self.start_state_
+        # More logic needed after for constraints
+    
+    def setWorkplaceParamaters(minx, maxx, miny, maxy, minz, maxz):
+        if((isinstance(minx, int) or isinstance(minx, float) ) and
+           (isinstance(miny, int) or isinstance(miny, float) ) and
+           (isinstance(minz, int) or isinstance(minz, float) ) and
+           (isinstance(maxx, int) or isinstance(maxx, float) ) and
+           (isinstance(maxy, int) or isinstance(maxy, float) ) and
+           (isinstance(maxz, int) or isinstance(maxz, float) ) and
+        ):
+            self.workspace_parameters_.header.frame_id #Get robot frame somehow
+            self.workspace_parameters_.header.stamp = self.clock_.now()
+
+            self.workspace_parameters_.min_corner.x = minx
+            self.workspace_parameters_.min_corner.y = miny
+            self.workspace_parameters_.min_corner.z = minz
+
+            self.workspace_parameters_.max_corner.x = maxx
+            self.workspace_parameters_.max_corner.y = maxy
+            self.workspace_parameters_.max_corner.z = maxz
+        else:
+            self.logger_().error("Attempt to set workplace parameter coordiante to invalid type")
     
 
 
