@@ -38,9 +38,9 @@ Services
 
 
 """
-class options():
+class Options():
 
-    def __init__(self, group_name, desc="robot_description", move_group_namespace="")
+    def __init__(self, group_name, desc="robot_description", move_group_namespace=""):
         self.group_name_ = group_name
         self.robot_description = desc
         self.namespace = move_group_namespace
@@ -52,7 +52,7 @@ class MoveGroupInterface():
         self.node_ = node
         self.tf_buffer_ = tf_buffer
         self.wait_for_servers_ = wait_for_servers
-        self.namespace_ = opt.namespace
+        self.namespace_ = self.opt.namespace
         self.robot_description_ = self.opt_.robot_description
 
         self.logger_ = self.node_.get_logger()
@@ -101,19 +101,19 @@ class MoveGroupInterface():
             raise RuntimeError("Timeout waiting for execute_trajectory action to become available")
         
         self.query_service_ = self.node_.create_client(QueryPlannerInterface, self.namespace_ + "/query_planner_interface", self.cb_group_)
-        if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_)
+        if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for query_planner_interface service")
 
         self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "/get_planner_params", self.cb_group_)
-        if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_)
+        if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for get_planner_params service")
 
         self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "/set_planner_params", self.cb_group_)
-        if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_)
+        if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for set_planner_params service")
 
         self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "/compute_cartesian_path", self.cb_group_)
-        if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_)
+        if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for compute_cartesian_path service")
 
     def setPlannerParams(self, planner_id, group, params, replace=False):
@@ -162,7 +162,7 @@ class MoveGroupInterface():
         else:
             self.logger_.error("Attempt to set can_look to invalid type")
     def getCanLook(self):
-        return can_look_
+        return self.can_look_
     
     def setLookAroundAttemps(self, n):
         if isinstance(n, int):
@@ -187,16 +187,18 @@ class MoveGroupInterface():
             self.replan_delay_ = float(n)
         else:
             self.logger_.error("Attempt to set replan_delay to invalid type")
+
     def getReplanDelay(self):
-        return replan_delay_
+        return self.replan_delay_
     
     def setReplanAttempts(self, n):
         if isinstance(n, int):
             self.replan_attempts_ = n
         else:
             self.logger_.error("Attempt to set replan_attempts to invalid type")
+
     def getReplanAttempt(self):
-        return replan_attempts_
+        return self.replan_attempts_
     
     def setGoalJointTolerance(self, n):
         if isinstance(n, int) or isinstance(n, float):
@@ -230,6 +232,7 @@ class MoveGroupInterface():
                 self.logger_.error("Attempt to set allowed_planning_time to impossible time")
         else:
             self.logger_.error("Attempt to set allowed_planning_time to invalid type")
+
     def getAllowedPlanningTime(self):
         return self.allowed_planning_time_
     
@@ -238,6 +241,7 @@ class MoveGroupInterface():
             self.num_planning_attemps_ = n
         else:
             self.logger_.error("Attempt to set num_planning_attempts to invalid type")
+
     def getNumPlanningAttemps(self):
         return self.num_planning_attemps_
     
@@ -260,7 +264,7 @@ class MoveGroupInterface():
            (isinstance(minz, int) or isinstance(minz, float) ) and
            (isinstance(maxx, int) or isinstance(maxx, float) ) and
            (isinstance(maxy, int) or isinstance(maxy, float) ) and
-           (isinstance(maxz, int) or isinstance(maxz, float) ) and
+           (isinstance(maxz, int) or isinstance(maxz, float) )
         ):
             self.workspace_parameters_.header.frame_id #Get robot frame somehow
             self.workspace_parameters_.header.stamp = self.clock_.now()
