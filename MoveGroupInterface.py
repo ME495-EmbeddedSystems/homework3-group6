@@ -1,16 +1,49 @@
 import rclpy
 from rclpy.node import Node
+
 from rclpy.action import ActionClient
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
 # https://wiki.ros.org/moveit_msgs
-from moveit_msgs.msg import PlannerParams, MotionPlanRequest, WorkplaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint
-from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterface, GetCartesianPath
+from moveit_msgs.msg import PlannerParams, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions
+from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
+
+from geometry_msgs.msg import PoseStamped
+from shape_msgs.msg import SolidPrimitive
 
 from sensor_msgs.msg import JointState
 from enum import Enum, auto
 
+
+import tf2_ros
+from tf2_ros import TransformBroadcaster
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
+
+class MoveApi(Node):
+    def __init__(self):
+        super().__init__("MoveApi")
+
+        joint_names = ['panda_joint1','panda_joint2','panda_joint3','panda_joint4','panda_joint5','panda_joint6','panda_joint7']
+        group_name = 'panda_manipulator'
+        end_effector_link = 'panda_link8'
+
+        self.robotModel = RobotModel(group_name, joint_names, end_effector_link)
+        self.API = MoveGroupInterface(self, self.robotModel)
+        self.API.setWorkspaceParamaters('panda_link0',-1.0, 1.0, -1.0, 1.0, -1.0, 1.0)
+        self.API.setPlanningPipelineID("move_group")
+
+        posGoal = PoseStamped()
+        posGoal.header.frame_id = "panda_link0"
+        self.get_logger().info("Here1")
+        self.API.addOrientationConstraint(posGoal)
+        self.get_logger().info("Here2")
+        res = self.API.makeMotionPlanRequest()
+        self.get_logger().info(res.error_code)
+
+
+        
 # https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/include/moveit/move_group_interface/move_group_interface.h
 # https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/src/move_group_interface.cpp
 # https://docs.ros.org/en/noetic/api/moveit_ros_planning_interface/html/move__group__interface_8cpp_source.html#l00407
@@ -39,8 +72,8 @@ Services
 /compute_fk
 /compute_ik
 
-
 """
+
 class TargetState(Enum):
     JOINT = auto(),
     POSE = auto(),
@@ -50,26 +83,27 @@ class TargetState(Enum):
 class RobotModel():
 
     def __init__(self, group_name, joint_names, default_end_effector=None,desc="robot_description"):
-        self.group_name_ = group_name
+        self.group_name = group_name
         self.joint_names = joint_names
         self.default_end_effector = default_end_effector
         self.robot_description = desc
 
 class MoveGroupInterface():
 
-    def __init__(self, node, robotModel, namespace, tf_buffer, wait_for_servers):
+    def __init__(self, node, robotModel, tf_buffer=None, namespace="", wait_for_servers=3.0):
         self.group_name_ = robotModel.group_name
-        self.robot_description_ = robotModelrobot_description
-        self.end_effector_link_ = robotMode.default_end_effector
-        self.namespace_ = self.namespace
+        self.robot_description_ = robotModel.robot_description
+        self.joint_names_ = robotModel.joint_names
+        self.end_effector_link_ = robotModel.default_end_effector
 
+        self.namespace_ = namespace
         self.node_ = node
         self.tf_buffer_ = tf_buffer
         self.wait_for_servers_ = wait_for_servers
         
         self.logger_ = self.node_.get_logger()
         self.clock_ = self.node_.get_clock()
-        self.cb_group_ = MutuallyExclusiveCallbackGroup()
+        self.cb_group_ = ReentrantCallbackGroup()
 
         # Available options, can redo / ignore some
         # opt.group_name 
@@ -85,13 +119,13 @@ class MoveGroupInterface():
 
         self.planning_pipeline_id_ = ""
         self.planner_id_ = ""
-        self.workspace_parameters_ = WorkplaceParameters()
+        self.workspace_parameters_ = WorkspaceParameters()
 
         self.can_look_ = False
         self.look_around_attempts_ = 0
         self.can_replan_ = False
         self.replan_delay_ = 2.0
-        self.replan_attempts_ = 1
+        self.replan_attempts_ = 10
         self.goal_joint_tolerance_ = 1e-4
         self.goal_position_tolerance_ = 1e-4
         self.goal_orientation_tolerance_ = 1e-3
@@ -99,9 +133,10 @@ class MoveGroupInterface():
         self.num_planning_attemps_ = 1
 
         self.current_state_ = None
+        self.start_state_ = None
         
-        self.max_velocity_scaling_factor_ = self.node_.get_parameter("velocity_scaling_factor").get_parameter_value().double_value
-        self.max_acceleration_scaling_factor_ = self.node_.get_parameter("acceleration_scaling_factor").get_parameter_value().double_value
+        self.max_velocity_scaling_factor_ = 0.1 #self.node_.get_parameter("velocity_scaling_factor").get_parameter_value().double_value
+        self.max_acceleration_scaling_factor_ = 0.1 #self.node_.get_parameter("acceleration_scaling_factor").get_parameter_value().double_value
 
         self.initalizing_constraints_ = False
 
@@ -113,27 +148,29 @@ class MoveGroupInterface():
 
         # Subscribe to /joint_states
 
-        self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "/move_group", self.cb_group_)
-        if not self.move_action_client_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.joint_state_sub = self.node_.create_subscription(JointState, "/joint_state", self.joint_state_callback, 10)
+
+        self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "/move_action", callback_group=self.cb_group_)
+        if not self.move_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for move_group action to become available")
 
-        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "/execute_trajectory", self.cb_group_)
-        if not self.execute_action_client_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "/execute_trajectory", callback_group=self.cb_group_)
+        if not self.execute_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for execute_trajectory action to become available")
         
-        self.query_service_ = self.node_.create_client(QueryPlannerInterface, self.namespace_ + "/query_planner_interface", self.cb_group_)
+        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "/query_planner_interface", callback_group=self.cb_group_)
         if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for query_planner_interface service")
 
-        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "/get_planner_params", self.cb_group_)
+        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "/get_planner_params", callback_group=self.cb_group_)
         if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for get_planner_params service")
 
-        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "/set_planner_params", self.cb_group_)
+        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "/set_planner_params", callback_group=self.cb_group_)
         if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for set_planner_params service")
 
-        self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "/compute_cartesian_path", self.cb_group_)
+        self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "/compute_cartesian_path", callback_group=self.cb_group_)
         if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for compute_cartesian_path service")
 
@@ -156,7 +193,7 @@ class MoveGroupInterface():
             return future_gpp_response.get()
     def setPlanningPipelineID(self, pipeline_id):
         if isinstance(pipeline_id, str):
-            if(pipeline_id != planning_pipeline_id_):
+            if(pipeline_id != self.planning_pipeline_id_):
                 self.planning_pipeline_id_ = pipeline_id
                 self.planner_id_ = ""
         else:
@@ -164,7 +201,7 @@ class MoveGroupInterface():
     def getPlanningPipelineID(self):
         return self.planning_pipeline_id_
     
-    def getDefaultPlannerID(self, group):
+    def getDefaultPlannerID(self):
         default_planner_id = self.node_.get_parameter("move_group/default_planning_pipeline").get_parameter_value().string_value
         return default_planner_id
 
@@ -267,15 +304,15 @@ class MoveGroupInterface():
         return self.num_planning_attemps_
 
     def setStartState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
-        start_state = RobotState()
-        start_state.joint_states = joint_values
+        # !!! Fix this
+        self.start_state_ = RobotState()
+        self.start_state_ .joint_states = joint_values
         if(not(mdof_joint_values is None)):
-            start_state.multi_dof_joint_state = mdof_joint_values
+            self.start_state_ .multi_dof_joint_state = mdof_joint_values
         if(not(attached_objects is None)):
-            start_state.attached_collision_objects = attached_objects
+            self.start_state_ .attached_collision_objects = attached_objects
         if(not(is_diff is None)):
-            start_state.is_diff = is_diff
-        self.start_state_ = start_state
+            self.start_state_ .is_diff = is_diff
 
     def addPositionConstraint(self, pose_stamped, link=None, tolerance=None, weight=1.0):
         new_pc = PositionConstraint()
@@ -285,7 +322,7 @@ class MoveGroupInterface():
         new_pc.target_point_offset = pose_stamped.pose.position
 
         if(link is None):
-            new_pc.link_name = self.default_end_effector
+            new_pc.link_name = self.end_effector_link_
         else:
             new_pc.link_name = link
         
@@ -293,10 +330,15 @@ class MoveGroupInterface():
             tolerance = self.goal_position_tolerance_
 
         BV = BoundingVolume()
-        BV.type = 1
-        BV.dimensions[0] = (2 * tolerance)
-        BV.dimensions[1] = (2 * tolerance)
-        BV.dimensions[2] = (2 * tolerance)
+        
+        SP = SolidPrimitive
+        SP.type = 1
+        SP.dimensions[0] = (2 * tolerance)
+        SP.dimensions[1] = (2 * tolerance)
+        SP.dimensions[2] = (2 * tolerance)
+
+        BV.primitives =  [SP]
+        BV.primitive_poses = [pose_stamped.pose]
 
         new_pc.constraint_region = BV
         new_pc.weight = weight
@@ -309,7 +351,7 @@ class MoveGroupInterface():
     def addOrientationConstraint(self, pose_stamped, link=None, tolerance=None, weight = 1.0):
         new_oc = OrientationConstraint()
         new_oc.header = pose_stamped.header
-        new_oc.orienation = pose_stamped.pose.orienation
+        new_oc.orientation = pose_stamped.pose.orientation
         if(link is None):
             new_oc.link_name = self.end_effector_link_
         else:
@@ -343,18 +385,17 @@ class MoveGroupInterface():
         request.pipeline_id = self.planning_pipeline_id_
         request.planner_id = self.planner_id_
         request.workspace_parameters = self.workspace_parameters_
-        if(self.start_state_ is None):
-            self.getCurrentState()
         request.start_state = self.start_state_
-
         self.constraints_.position_constraints = self.position_constraints_
         self.constraints_.orientation_constraints = self.orientation_constraints_
-        
-        self.constraints_ = self.mergeConstraints(self.constraints_, self.constraints_)
-        request.goal_constraints = self.constraints_
+
+        # Fix This !--!
+        #self.constraints_ = self.mergeConstraints(self.constraints_, self.constraints_)
+        request.goal_constraints = [self.constraints_]
         return request
     
     def mergeConstraints(self, first_c, second_c):
+        # !!! Fix this
 
         merged_c = Constraints()
 
@@ -374,31 +415,31 @@ class MoveGroupInterface():
                         JC.weight = (i.weight + j.weight)/2.0
                         JC.tolerance_above = max(0.0, high - JC.position)
                         JC.tolerance_below = max(0.0, JC.position - low)
-                        merged_c.joint_constraints.push_back(JC)
+                        merged_c.joint_constraints.append(JC)
                     break
                 if(add):
-                    merged_c.joint_constraints.push_back(i)
+                    merged_c.joint_constraints.append(i)
 
         for i in second_c.joint_constraints:
             add = True
             for j in first_c.joint_constraints:
-            if (i.joint_name==j.joint_name):
-                add = False
-                break
+                if (i.joint_name==j.joint_name):
+                    add = False
+                    break
             if (add):
-                merged_c.joint_constraints.push_back(i)
+                merged_c.joint_constraints.append(i)
 
         merged_c.position_constraints = first_c.position_constraints
         for i in second_c.position_constraints:
-            merged_c.position_constraints.push_back(i)
+            merged_c.position_constraints.append(i)
         
         merged_c.orientation_constraints = first_c.orientation_constraints
         for i in second_c.orientation_constraints:
-            merged_c.orientation_constraints.push_back(i)
+            merged_c.orientation_constraints.append(i)
 
         merged_c.visibility_constraints = first_c.visibility_constraints
         for i in second_c.visibility_constraints:
-            merged_c.visibility_constraints.push_back(i)
+            merged_c.visibility_constraints.append(i)
         
         return(merged_c)
 
@@ -406,32 +447,45 @@ class MoveGroupInterface():
         if(not(eef_pose_stamped is None)):
             self.addPositionConstraint(eef_pose_stamped)
             self.addOrientationConstraint(eef_pose_stamped)
-        req = self.constructMotionPlanRequest()
-        self.future_move = self.move_action_client_.call_async(req)
+        # Fix this !--!
+        #if(not(start_state is None) and self.start_state_ is None):
+        #   self.setStartState(self.current_state_)
+        self.start_state_ = RobotState()
+        goal = MoveGroup.Goal()
+        # ADD PLANNING OPTIONS SECTION
+        goal.request = self.constructMotionPlanRequest()
+        call_ma_future = self.move_action_client_.send_goal_async(goal)
         self.start_state_ = None
         self.clearOrientationConstraints()
         self.clearPositionConstraints()
-        if(self.future_move.done()):
-            # Do something?
-            response = self.future_move.get()
+        while not(call_ma_future.done()):
+            self.logger_.info("Waiting!")
+        return call_ma_future.result()
+        
     
-    def getCurrentState():
-        # listen to /joint_states to get current state
-        # only need states for joints we care about
-        # check joint_names
-        self.logger_.debug("Getting Current State!")
+    def joint_state_callback(self, msg):
+        self.current_state_ = JointState()
+        self.current_state_.header = msg.header
+
+        for i in range(len(msg.name)):
+            for j in self.joint_names_:
+                if(msg.name[i] == j):
+                    self.current_state_.name.append(msg.name[i])
+                    self.current_state_.position.append(msg.position[i])
+                    self.current_state_.velocity.append(msg.velocity[i])
+                    self.current_state_.effort.append(msg.effort[i])
 
     
-    def setWorkplaceParamaters(self, frame, minx, maxx, miny, maxy, minz, maxz):
+    def setWorkspaceParamaters(self, frame, minx, maxx, miny, maxy, minz, maxz):
         if((isinstance(minx, int) or isinstance(minx, float) ) and
            (isinstance(miny, int) or isinstance(miny, float) ) and
            (isinstance(minz, int) or isinstance(minz, float) ) and
            (isinstance(maxx, int) or isinstance(maxx, float) ) and
            (isinstance(maxy, int) or isinstance(maxy, float) ) and
-           (isinstance(maxz, int) or isinstance(maxz, float) )
-        ):
+           (isinstance(maxz, int) or isinstance(maxz, float) )):
+
             self.workspace_parameters_.header.frame_id = frame
-            self.workspace_parameters_.header.stamp = self.clock_.now()
+            self.workspace_parameters_.header.stamp = self.clock_.now().to_msg()
 
             self.workspace_parameters_.min_corner.x = minx
             self.workspace_parameters_.min_corner.y = miny
@@ -441,8 +495,19 @@ class MoveGroupInterface():
             self.workspace_parameters_.max_corner.y = maxy
             self.workspace_parameters_.max_corner.z = maxz
         else:
-            self.logger_().error("Attempt to set workplace parameter coordiante to invalid type")
+            self.logger_().error("Attempt to set workspace parameter coordiante to invalid type")
     
 
 
 
+
+def main(args=None):
+    """Run arena node."""
+    rclpy.init(args=args)
+    myMoveApi= MoveApi()
+    rclpy.spin(myMoveApi)
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
