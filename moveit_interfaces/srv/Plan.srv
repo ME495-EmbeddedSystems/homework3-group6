@@ -1,4 +1,6 @@
 geometry_msgs/Pose start_pose
 geometry_msgs/Pose goal_pose
+int8 plan_mode # 1: position only, 2: orientation only, 3: position and orientation
 bool use_start_pose
+bool plan_only
 ---

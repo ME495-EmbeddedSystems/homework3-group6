@@ -1,11 +1,11 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from moveit_interfaces.srv import PoseSrv, PlaceBox, Plan
+from moveit_interfaces.srv import PlaceBox, Plan
 from std_srvs.srv import Empty
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
-from moveit_msgs.msg import PositionIKRequest, CollisionObject, PlanningScene, PlanningSceneComponents, MotionPlanRequest, Constraints, JointConstraint, PositionConstraint, OrientationConstraint, BoundingVolume
+from moveit_msgs.msg import PositionIKRequest, CollisionObject, PlanningScene, PlanningSceneComponents, MotionPlanRequest, Constraints, JointConstraint, PositionConstraint, OrientationConstraint, BoundingVolume, MoveItErrorCodes
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene
 from moveit_msgs.action import MoveGroup
 from shape_msgs.msg import SolidPrimitive
@@ -21,35 +21,23 @@ class MoveitAPI(Node):
 
         self.cbgroup = ReentrantCallbackGroup()
 
-        timer_period = 0.5  # seconds
-        self.timer = self.create_timer(timer_period, self.timer_callback)
-
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-
-        self.plan_client = ActionClient(self, MoveGroup, "move_action",)
-
+        # Subscriber for joint state messages
         self.joint_state_sub = self.create_subscription(JointState, "joint_states", self.joint_state_callback, 10)
         self.joint_state_msg = None
 
-        self.plan = self.create_service(Plan, "plan", self.plan_callback, callback_group=self.cbgroup)
+        # Create services to generate motion plan and place box
+        self.plan = self.create_service(Plan, "plan", self.generate_motion_plan, callback_group=self.cbgroup)
+        self.place_box = self.create_service(PlaceBox, "place_box", self.place_box_callback, callback_group=self.cbgroup)
+
+        # Create service client to comput IK
         self.ik_client = self.create_client(GetPositionIK, "compute_ik", callback_group=self.cbgroup)
 
-        # Box publisher, service, and client
-        self.box_publisher = self.create_publisher(PlanningScene, "planning_scene", 10)
-        self.place_box = self.create_service(PlaceBox, "place_box", self.place_box_callback, callback_group=self.cbgroup)
-        self.scene_client = self.create_client(GetPlanningScene, "get_planning_scene")
+        # Create action client to generate motion plans
+        self.plan_client = ActionClient(self, MoveGroup, "move_action")
 
-    def timer_callback(self):
-        """
-        Set up the transform listener to get the end effector position information.
-        """
-        try:
-            self.base_ee_tf = self.tf_buffer.lookup_transform('panda_link0', 'panda_hand_tcp', rclpy.time.Time())
-        
-            self.get_logger().info("Panda TF: RECEIVED",once=True)
-        except:
-            self.get_logger().warn("Panda TF: WAITING")
+        # Planning scene service client and publisher
+        self.scene_client = self.create_client(GetPlanningScene, "get_planning_scene")
+        self.box_publisher = self.create_publisher(PlanningScene, "planning_scene", 10)
 
     async def place_box_callback(self, request, response):
         """
@@ -96,75 +84,96 @@ class MoveitAPI(Node):
 
         return response
     
-    def get_ik_rqst_msg(self, pose):
+    def build_ik_request(self, pose):
+        """
+        Builds a position IK request.
 
-        ikmsg = PositionIKRequest()
-        ikmsg.group_name = 'panda_manipulator'
-        ikmsg.robot_state.joint_state = self.joint_state_msg
-        ikmsg.pose_stamped.header.frame_id = 'panda_link0'
-        ikmsg.pose_stamped.header.stamp = self.get_clock().now().to_msg()
-        ikmsg.pose_stamped.pose.position.x = pose.position.x
-        ikmsg.pose_stamped.pose.position.y = pose.position.y
-        ikmsg.pose_stamped.pose.position.z = pose.position.z
-        ikmsg.pose_stamped.pose.orientation.x = pose.orientation.x
-        ikmsg.pose_stamped.pose.orientation.y = pose.orientation.y
-        ikmsg.pose_stamped.pose.orientation.z = pose.orientation.z
-        ikmsg.pose_stamped.pose.orientation.w = pose.orientation.w
-        ikmsg.timeout.sec = 5
+        Args
+        ----
+            pose (geometry_msgs/Pose): The desired end effector pose
 
-        return ikmsg
+        Returns
+        -------
+           A GetPositionIK Request object
+
+        """
+        pos_ik_req = PositionIKRequest()
+        pos_ik_req.group_name = 'panda_manipulator'
+        pos_ik_req.robot_state.joint_state = self.joint_state_msg
+        pos_ik_req.pose_stamped.header.frame_id = 'panda_link0'
+        pos_ik_req.pose_stamped.header.stamp = self.get_clock().now().to_msg()
+        pos_ik_req.pose_stamped.pose.position.x = pose.position.x
+        pos_ik_req.pose_stamped.pose.position.y = pose.position.y
+        pos_ik_req.pose_stamped.pose.position.z = pose.position.z
+        pos_ik_req.pose_stamped.pose.orientation.x = pose.orientation.x
+        pos_ik_req.pose_stamped.pose.orientation.y = pose.orientation.y
+        pos_ik_req.pose_stamped.pose.orientation.z = pose.orientation.z
+        pos_ik_req.pose_stamped.pose.orientation.w = pose.orientation.w
+        pos_ik_req.timeout.sec = 5
+
+        get_pos_ik_req = GetPositionIK.Request()
+        get_pos_ik_req.ik_request = pos_ik_req
+
+        return get_pos_ik_req
     
-    def get_request(self, start_state, goal_pose):
+    def build_plan_request(self, start_state, goal_pose, plan_mode, plan_only = True):
         """
-        start: JointState
-        goal: Pose
-        """
+        Builds a path planning request.
 
-        # Create constraints
+        Args
+        ----
+            start_state (sensor_msgs/JointState): The starting joint configuration
+
+            goal_pose (geometry_msgs/Pose): The goal pose for the robot
+
+            plan_mode (int): 0 - position only, 1 - orientation_only, 2 - position and orientation
+
+            plan_only (bool): Determines whether or not the plan gets executed once complete
+
+        Returns
+        -------
+           A MoveGroup Goal object
+
+        """
+        # Create Constraints
         goal_constraints = Constraints()
+        
+        if plan_mode == 0 or plan_mode == 2:
 
-        # for i in range(len(goal_state.name)):
-        #     joint_constraint = JointConstraint()
-        #     joint_constraint.joint_name = goal_state.name[i]
-        #     joint_constraint.position = goal_state.position[i]
-        #     joint_constraint.tolerance_above = 1e-3
-        #     joint_constraint.tolerance_below = 1e-3
-        #     joint_constraint.weight = 1.0
+            solid_primitive = SolidPrimitive()
+            solid_primitive.type = 1
+            solid_primitive.dimensions = [2e-3, 2e-3, 2e-3]
 
-        #     goal_constraints.joint_constraints.append(joint_constraint)
+            pose = Pose()
+            pose.position.x = goal_pose.position.x
+            pose.position.y = goal_pose.position.y
+            pose.position.z = goal_pose.position.z
 
-        BV = BoundingVolume()
+            BV = BoundingVolume()
+            BV.primitives =  [solid_primitive]
+            BV.primitive_poses = [pose]
 
-        solid_primitive = SolidPrimitive()
-        solid_primitive.type = 1
-        solid_primitive.dimensions = [2e-3, 2e-3, 2e-3]
+            position_constraint = PositionConstraint()
+            position_constraint.header.frame_id = 'panda_link0'
+            position_constraint.link_name = 'panda_link8'
+            position_constraint.constraint_region = BV
+            position_constraint.weight = 1.0
 
-        pose = Pose()
-        pose.position.x = goal_pose.position.x
-        pose.position.y = goal_pose.position.y
-        pose.position.z = goal_pose.position.z
+            goal_constraints.position_constraints.append(position_constraint)
 
-        BV.primitives =  [solid_primitive]
-        BV.primitive_poses = [pose]
+        if plan_mode == 1 or plan_mode == 2:
+            orientation_constraint = OrientationConstraint()
+            orientation_constraint.header.frame_id = 'panda_link0'
+            orientation_constraint.link_name = 'panda_link8'
+            orientation_constraint.orientation = goal_pose.orientation
+            orientation_constraint.absolute_x_axis_tolerance = 1e-3
+            orientation_constraint.absolute_y_axis_tolerance = 1e-3
+            orientation_constraint.absolute_z_axis_tolerance = 1e-3
+            orientation_constraint.weight = 1.0
 
-        position_constraint = PositionConstraint()
-        position_constraint.header.frame_id = 'panda_link0'
-        position_constraint.link_name = 'panda_link8'
-        position_constraint.constraint_region = BV
-        position_constraint.weight = 1.0
+            goal_constraints.orientation_constraints.append(orientation_constraint)
 
-        orientation_constraint = OrientationConstraint()
-        orientation_constraint.header.frame_id = 'panda_link0'
-        orientation_constraint.link_name = 'panda_link8'
-        orientation_constraint.orientation = goal_pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 1e-3
-        orientation_constraint.absolute_y_axis_tolerance = 1e-3
-        orientation_constraint.absolute_z_axis_tolerance = 1e-3
-        orientation_constraint.weight = 1.0
-
-        goal_constraints.position_constraints.append(position_constraint)
-        goal_constraints.orientation_constraints.append(orientation_constraint)
-
+        # Create Motion Plan Request
         req = MotionPlanRequest()
         req.workspace_parameters.header.stamp = self.get_clock().now().to_msg()
         req.workspace_parameters.min_corner.x = -1.0
@@ -183,50 +192,85 @@ class MoveitAPI(Node):
         req.max_velocity_scaling_factor = 0.1
         req.max_acceleration_scaling_factor = 0.1
 
-        self.get_logger().info(str(req))
-
+        # Create MoveGroup Goal
         plan_request = MoveGroup.Goal()
         plan_request.request = req
-        plan_request.planning_options.plan_only = True
+        plan_request.planning_options.plan_only = plan_only
 
         return plan_request
     
     async def compute_ik(self, pose):
+        """
+        Computes the inverse kinematic for a given end effector pose
 
-        msg = self.get_ik_rqst_msg(pose)
+        Args
+        ----
+            pose (geometry_msgs/Pose): The goal pose for the end effector
 
-        self.ik_response = await self.ik_client.call_async(GetPositionIK.Request(ik_request=msg))
+        Returns
+        -------
+           A sensor_msgs/JointState object
 
-        #self.get_logger().info(str(self.ik_response.error_code))
+        """
+        # Build the IK Request
+        get_pos_ik_req = self.build_ik_request(pose)
 
-        return self.ik_response.solution.joint_state
+        # Call the IK service
+        ik_response = await self.ik_client.call_async(get_pos_ik_req)
+
+        return ik_response
     
-    async def plan_callback(self, request, response):
-        
-        # If start_pose is provided
+    async def generate_motion_plan(self, request, response):
+        """
+        Generates a motion plan for the robot.
+
+        Args
+        ----
+            request (PlanRequest): A plan request
+
+        Returns
+        -------
+           An EmptyResponse object
+
+        """
+        # If start_pose is provided, compute the JointState for that pose
         if request.use_start_pose == True:
 
-            start_joint_state = await self.compute_ik(request.start_pose)
+            ik_response = await self.compute_ik(request.start_pose)
 
+            self.get_logger().info(str(ik_response))
+
+            # If no IK solution is found
+            if ik_response.error_code.val == MoveItErrorCodes.NO_IK_SOLUTION:
+                self.get_logger().warn("No IK solution found for start pose. Starting at current robot configuration instead.")
+                start_joint_state = self.joint_state_msg
+
+            # If IK solution is found, use that JointState as starting JointState
+            else:
+                start_joint_state = ik_response.solution.joint_state
+
+        # Otherwise use the current JointState
         else:
-
             start_joint_state = self.joint_state_msg
 
-        # self.get_logger().info(str(start_joint_state))
+        # Create the MoveGroup Goal
+        plan_req = self.build_plan_request(start_joint_state, request.goal_pose, request.plan_mode, request.plan_only)
 
-        # goal_joint_state = await self.compute_ik(request.goal_pose)
-        # goal_joint_state = self.joint_state_msg
-        # goal_joint_state.position[2] += 0.5
-        
-        # plan_msg = self.get_request(start_joint_state, goal_joint_state)
-        plan_msg = self.get_request(start_joint_state, request.goal_pose)
-
-        self.future_response = await self.plan_client.send_goal_async(plan_msg)
+        # Call the move action client
+        self.future_response = await self.plan_client.send_goal_async(plan_req)
         self.plan_response = await self.future_response.get_result_async()
 
         return response
     
     def joint_state_callback(self, msg):
+        """
+        Updated the current JointState of the robot.
+
+        Args
+        ----
+            msg (JointState): The current JointState of the robot
+
+        """
         self.joint_state_msg = msg
         
 def main(args=None):
