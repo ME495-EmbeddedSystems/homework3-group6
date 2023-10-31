@@ -6,18 +6,17 @@ from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
 # https://wiki.ros.org/moveit_msgs
-from moveit_msgs.msg import PlannerParams, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory
-from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath
+from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject
+from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose
 from shape_msgs.msg import SolidPrimitive
 
 from sensor_msgs.msg import JointState
 from enum import Enum, auto
 
 from action_msgs.msg import GoalStatus
-
 
 import tf2_ros
 from tf2_ros import TransformBroadcaster
@@ -37,9 +36,20 @@ class MoveApi(Node):
         self.API.setWorkspaceParamaters('panda_link0',-1.0, 1.0, -1.0, 1.0, -1.0, 1.0)
         self.API.setPlanningPipelineID("move_group")
 
+        self.box = SolidPrimitive()
+        self.box.type = 1
+        self.box.dimensions = [0.5,0.5,0.5]
+
+        self.box_pose = PoseStamped()
+        self.box_pose.header.frame_id = "panda_link0"
+        self.box_pose.pose.position.x = 1.0
+        self.box_pose.pose.position.y = 1.0
+        self.box_pose.pose.position.z = 0.0
+
         poseGoal = PoseStamped()
         poseGoal.header.frame_id = "panda_link0"
-        poseGoal.pose.position.z = 0.3
+        poseGoal.pose.position.z = 0.2
+        poseGoal.pose.position.x = 0.2
         self.API.addOrientationConstraint(poseGoal)
         self.API.addPositionConstraint(poseGoal)
         
@@ -51,16 +61,15 @@ class MoveApi(Node):
 
     async def timer_callback(self):
         self.i +=1
+        if(self.i == 50):
+            await self.API.addCollisionObject(self.box, self.box_pose)
+
         if(self.i == 100):
             self.res, self.stat1 = await self.API.makeMotionPlanRequest(plan_only=True)
             self.traj = self.res.planned_trajectory
         
         if(not(self.traj is None) and self.i == 300):
             self.res2, self.stat2 = await self.API.executeTrajectory(self.traj)
-           
-            
-        
-
 
         
 # https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/include/moveit/move_group_interface/move_group_interface.h
@@ -79,7 +88,7 @@ class MoveApi(Node):
 /display_contacts
 /display_planned_path
 /dynamic_joint_states
-/franka/joint_states
+/franka/joint_states 
 /goal_pose
 /initialpose
 /trajectory_execution_event
@@ -93,12 +102,6 @@ Services
 
 """
 
-class TargetState(Enum):
-    JOINT = auto(),
-    POSE = auto(),
-    POSITION = auto(),
-    ORIENTATION = auto()
-
 class RobotModel():
 
     def __init__(self, group_name, joint_names, default_end_effector=None,desc="robot_description"):
@@ -111,7 +114,7 @@ class MoveGroupInterface():
 
     def __init__(self, node, robotModel, tf_buffer=None, namespace="", wait_for_servers=3.0):
         self.group_name_ = robotModel.group_name
-        self.robot_description_ = robotModel.robot_description
+        self.robot_description_ = robotModel.robot_description #unused
         self.joint_names_ = robotModel.joint_names
         self.end_effector_link_ = robotModel.default_end_effector
 
@@ -122,7 +125,7 @@ class MoveGroupInterface():
         
         self.logger_ = self.node_.get_logger()
         self.clock_ = self.node_.get_clock()
-        self.cb_group_ = ReentrantCallbackGroup() # Change to MECB probablly 
+        self.cb_group_ = MutuallyExclusiveCallbackGroup() # Change to MECB probablly 
 
 
         self.planning_pipeline_id_ = ""
@@ -137,13 +140,13 @@ class MoveGroupInterface():
         self.goal_joint_tolerance_ = 1e-4
         self.goal_position_tolerance_ = 1e-4
         self.goal_orientation_tolerance_ = 1e-3
-        self.allowed_planning_time_ = 15.0
+        self.allowed_planning_time_ = 5.0
         self.num_planning_attemps_ = 1
 
         self.current_state_ = None
         self.start_state_ = None
 
-        # !!! Add setters / getters for this, 
+        # !!! Add setters / getters for this, check if paramters exist else default to value
         self.max_velocity_scaling_factor_ = 0.1 #self.node_.get_parameter("velocity_scaling_factor").get_parameter_value().double_value
         self.max_acceleration_scaling_factor_ = 0.1 #self.node_.get_parameter("acceleration_scaling_factor").get_parameter_value().double_value
 
@@ -154,9 +157,11 @@ class MoveGroupInterface():
         self.position_constraints_ = []
         self.orientation_constraints_ = []
         self.joint_constraints_ = []
+        self.visibility_constraints_ = [] # Add funcitonality for increasd quality submisison -- doesnt exit rn
 
+        self.joint_state_sub_ = self.node_.create_subscription(JointState, "/joint_states", self.joint_state_callback, 10)
 
-        self.joint_state_sub = self.node_.create_subscription(JointState, "/joint_states", self.joint_state_callback, 10)
+        self.planning_scene_pub_ = self.node_.create_publisher(PlanningScene, self.namespace_+"/planning_scene", 10)
 
         self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "/move_action", callback_group=self.cb_group_)
         if not self.move_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
@@ -181,12 +186,16 @@ class MoveGroupInterface():
         self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "/compute_cartesian_path", callback_group=self.cb_group_)
         if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for compute_cartesian_path service")
+        
+        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"/get_planning_scene", callback_group=self.cb_group_)
+        if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for get_planning_scene service")
 
 
     """
 
     Setters / Getters 
-    !!! (Sort them? )
+    !!! (Sort them? Alpha?)
 
     """
 
@@ -198,16 +207,14 @@ class MoveGroupInterface():
 
         self.set_params_service_.call_async(request)
     
-    def getPlannerParams(self, planner_id, group):
+    async def getPlannerParams(self, planner_id, group):
         request = GetPlannerParams()
         request.planner_config = planner_id
         request.group = group
 
-        future_gpp_response = self.get_params_service_.call_async(request)
+        response = await self.get_params_service_.call_async(request)
+        return response
 
-        if(future_gpp_response.done()):
-            return future_gpp_response.get()
-    
     def setPlanningPipelineID(self, pipeline_id):
         if isinstance(pipeline_id, str):
             if(pipeline_id != self.planning_pipeline_id_):
@@ -215,6 +222,7 @@ class MoveGroupInterface():
                 self.planner_id_ = ""
         else:
             self.logger_.error("Attempt to set planning_pipeline_id to invalid type")
+
     def getPlanningPipelineID(self):
         return self.planning_pipeline_id_
     
@@ -247,6 +255,7 @@ class MoveGroupInterface():
             self.look_around_attempts_ = abs(n)
         else:
             self.logger_.error("Attempt to set look_around_attempts to invalid type")
+
     def getLookAroundAttemps(self):
         return self.look_around_attempts_
     
@@ -255,6 +264,7 @@ class MoveGroupInterface():
             self.can_replan_ = n
         else:
             self.logger_.error("Attempt to set can_replan to invalid type")
+
     def getCanReplan(self):
         return self.can_replan_
     
@@ -281,6 +291,7 @@ class MoveGroupInterface():
             self.goal_joint_tolerance_ = float(n)
         else:
             self.logger_.error("Attempt to set goal_joint_tolerance to invalid type")
+
     def getGoalJointTolerance(self):
         return self.goal_joint_tolerance_
     
@@ -297,6 +308,7 @@ class MoveGroupInterface():
             self.goal_orientation_tolerance_ = float(n)
         else:
             self.logger_.error("Attempt to set goal_orientation_tolreance to invalid type")
+
     def getGoalOrientationolerance(self):
         return self.goal_orientation_tolerance_
     
@@ -311,7 +323,7 @@ class MoveGroupInterface():
 
     def getAllowedPlanningTime(self):
         return self.allowed_planning_time_
-    
+
     def setNumPlanningAttemps(self, n):
         if isinstance(n, int):
             self.num_planning_attemps_ = n
@@ -331,7 +343,7 @@ class MoveGroupInterface():
             self.start_state_ .attached_collision_objects = attached_objects
         if(not(is_diff is None)):
             self.start_state_ .is_diff = is_diff
-    
+
     def setWorkspaceParamaters(self, frame, minx, maxx, miny, maxy, minz, maxz):
         if((isinstance(minx, int) or isinstance(minx, float) ) and
            (isinstance(miny, int) or isinstance(miny, float) ) and
@@ -353,7 +365,6 @@ class MoveGroupInterface():
             self.workspace_parameters_.max_corner.z = maxz
         else:
             self.logger_().error("Attempt to set workspace parameter coordiante to invalid type")
-        
     
     """
 
@@ -361,13 +372,14 @@ class MoveGroupInterface():
 
     """
 
-    def addPositionConstraint(self, pose_stamped, link=None, tolerance=None, weight=1.0):
+    def addPositionConstraint(self, pose_stamped, link=None, offset=None, tolerance=None, weight=1.0):
         new_pc = PositionConstraint()
         new_pc.header = pose_stamped.header
 
-        new_pc.target_point_offset.x = pose_stamped.pose.position.x
-        new_pc.target_point_offset.y = pose_stamped.pose.position.y
-        new_pc.target_point_offset.z = pose_stamped.pose.position.z
+        if(not(offset is None)):
+            new_pc.target_point_offset.x = offset.x
+            new_pc.target_point_offset.y = offset.y
+            new_pc.target_point_offset.z = offset.z
 
         if(link is None):
             new_pc.link_name = self.end_effector_link_
@@ -394,7 +406,7 @@ class MoveGroupInterface():
     def clearPositionConstraints(self):
         self.position_constraints_ = []
 
-    def addOrientationConstraint(self, pose_stamped, link=None, tolerance=None, weight = 1.0):
+    def addOrientationConstraint(self, pose_stamped, link=None, tolerance=None, weight=1.0):
         new_oc = OrientationConstraint()
         new_oc.header = pose_stamped.header
         new_oc.orientation = pose_stamped.pose.orientation
@@ -418,7 +430,7 @@ class MoveGroupInterface():
     def clearOrientationConstraints(self):
         self.orientation_constraints_ = []
     
-    def addPoseConstraint(self, pose_stamped, link=None, lin_tol=None, ang_tol=None, weight = 1.0):
+    def addPoseConstraint(self, pose_stamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
         self.addOrientationConstraint(pose_stamped, link=link, tolerance=ang_tol, weight=weight)
         self.addPositionConstraint(pose_stamped, link=link, tolerance=lin_tol, weight=weight)
 
@@ -426,63 +438,65 @@ class MoveGroupInterface():
         self.clearOrientationConstraints()
         self.clearPositionConstraints()
     
-    # Add joint_constraint functionality
+    def addJointConstraint(self, position, joint_name=None, tol_a=None, tol_b=None, weight=1.0):
+        new_jc = JointConstraint()
+
+        if(joint_name is None):
+            joint_name = self.end_effector_link_
+        if(tol_a is None):
+            tol_a = self.goal_joint_tolerance_
+        if(tol_b is None):
+            tol_b = self.goal_joint_tolerance_
+            
+        new_jc.name = joint_name
+        new_jc.position = position
+        new_jc.tolerance_above = tol_a
+        new_jc.tolerance_below = tol_b
+        new_jc.weight = weight
+
+        self.joint_constraints_.append(new_jc)
 
     def clearJointConstraints(self):
         self.joint_constraints_ = []
-    
+
     def clearAllConstraints(self):
         self.clearPoseConstraints()
         self.clearJointConstraints()  
-    
-    def mergeConstraints(self, first_c, second_c):
-        # !!! Fix this
 
-        merged_c = Constraints()
+    def mergeJointConstraints(self):
+        # !!! Fix this: Validate, double check logic
+        # For sure doesnt work now if many constraints with same joint_name
+        # Possible fix: find all indicies with same joint name
+        # Merged back to back with those
+        # Separate merge function
+        # Seems doable
 
-        for i in first_c.joint_constraints:
+        merged_jc = []
+
+        for i in range(len(self.joint_constraints_)):
             add = True
-            for j in second_c.joint_constraints:
-                if(j.joint_name == i.joint_name):
+            for j in range(i+1,len(self.joint_constraints_)):
+                if(self.joint_constraints_[i].joint_name == self.joint_constraints_[j].joint_name):
                     add = False
                     JC = JointConstraint()
-                    low = max(i.position - i.tolerance_below, j.position - j.tolerance_below)
-                    high = min(i.position + i.tolerance_above, j.position + j.tolerance_above)
+                    first_jc = self.joint_constraints_[i]
+                    second_jc = self.joint_constraints_[j]
+                    low = max(first_jc.position - first_jc.tolerance_below, second_jc.position - second_jc.tolerance_below)
+                    high = min(first_jc.position + first_jc.tolerance_above, second_jc.position + second_jc.tolerance_above)
                     if(low > high):
-                        self.logger_.error("Incompatiable Joint Constraints for joint " + i.joint_name + ", discarding constraint")
+                        self.logger_.error("Incompatiable Joint Constraints for joint " + first_jc.joint_name + ", discarding constraint")
                     else:
-                        JC.joint_name = i.joint_name
-                        JC.position = max(low, min((i.position * i.weight + j.position * j.weight)/(i.weight + j.weight)), high)
-                        JC.weight = (i.weight + j.weight)/2.0
+                        JC.joint_name = first_jc.joint_name
+                        JC.position = max(low, min((first_jc.position * first_jc.weight + second_jc.position * second_jc.weight)/(first_jc.weight + second_jc.weight)), high)
+                        JC.weight = (first_jc.weight + second_jc.weight)/2.0
                         JC.tolerance_above = max(0.0, high - JC.position)
                         JC.tolerance_below = max(0.0, JC.position - low)
-                        merged_c.joint_constraints.append(JC)
+                        merged_jc.append(JC)
                     break
-                if(add):
-                    merged_c.joint_constraints.append(i)
-
-        for i in second_c.joint_constraints:
-            add = True
-            for j in first_c.joint_constraints:
-                if (i.joint_name==j.joint_name):
-                    add = False
-                    break
-            if (add):
-                merged_c.joint_constraints.append(i)
-
-        merged_c.position_constraints = first_c.position_constraints
-        for i in second_c.position_constraints:
-            merged_c.position_constraints.append(i)
+            if(add):
+                merged_jc.append(self.joint_constraints_[i])
         
-        merged_c.orientation_constraints = first_c.orientation_constraints
-        for i in second_c.orientation_constraints:
-            merged_c.orientation_constraints.append(i)
-
-        merged_c.visibility_constraints = first_c.visibility_constraints
-        for i in second_c.visibility_constraints:
-            merged_c.visibility_constraints.append(i)
-        
-        return(merged_c)
+        self.joint_constraints_ = merged_jc
     
     """
 
@@ -500,7 +514,6 @@ class MoveGroupInterface():
         options.replan_delay = self.replan_delay_
         return options
 
-
     def constructMotionPlanRequest(self):
         request = MotionPlanRequest()
         request.group_name = self.group_name_
@@ -516,7 +529,7 @@ class MoveGroupInterface():
         self.constraints_.orientation_constraints = self.orientation_constraints_
 
         # !!! Fix this function 
-        #self.constraints_ = self.mergeConstraints(self.constraints_, self.constraints_)
+        #self.constraints_ = self.mergeJointConstraints()
         request.goal_constraints = [self.constraints_]
         return request
     
@@ -526,6 +539,7 @@ class MoveGroupInterface():
             self.addPositionConstraint(eef_pose_stamped)
             self.addOrientationConstraint(eef_pose_stamped)
 
+        # If plan_only = False (executing trajectory right after), MUST start at current state
         if((start_state is None and self.start_state_ is None) or not(plan_only)):
             self.setStartState(self.current_state_)
         elif(not(start_state is none)):
@@ -544,6 +558,7 @@ class MoveGroupInterface():
         res = await goal_handle.get_result_async()
         result = res.result
         status = res.status
+
         if status == GoalStatus.STATUS_SUCCEEDED:
             self.logger_.info("Goal succeeded!")
         else:
@@ -583,14 +598,30 @@ class MoveGroupInterface():
                     self.current_state_.velocity.append(msg.velocity[i])
                     self.current_state_.effort.append(msg.effort[i])
 
+    async def getPlanningScene(self, components=PlanningSceneComponents()):
+        planning_scene = await self.planning_scene_service_.call_async(GetPlanningScene.Request(components=components))
+        return planning_scene.scene
+
+    async def addCollisionObject(self, shape, pose_stamped):
+        scene = await self.getPlanningScene()
+        
+        obj = CollisionObject()
+        obj.header = pose_stamped.header
+        obj.pose = pose_stamped.pose
+        obj.primitives = [shape]
+        obj.primitive_poses = [Pose()]
+
+        scene.world.collision_objects.append(obj)
+
+        self.planning_scene_pub_.publish(scene)
+
     def cleanUp(self):
         """Clean up after planning"""
         self.clearAllConstraints()
         self.start_state_ = None
 
-
 def main(args=None):
-    """Run arena node."""
+    """Run api node."""
     rclpy.init(args=args)
     myMoveApi= MoveApi()
     rclpy.spin(myMoveApi)
