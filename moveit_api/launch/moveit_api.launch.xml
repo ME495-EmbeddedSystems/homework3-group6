@@ -1,0 +1,3 @@
+<node pkg="turtle_brick" exec="arena" name="arena">
+    <param from="$(find-pkg-share turtle_brick)/turtle.yaml" />
+</node>

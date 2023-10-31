@@ -7,11 +7,10 @@ from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
 from moveit_msgs.msg import PositionIKRequest, CollisionObject, PlanningScene, PlanningSceneComponents, MotionPlanRequest, Constraints, JointConstraint, PositionConstraint, OrientationConstraint, BoundingVolume, MoveItErrorCodes
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene
-from moveit_msgs.action import MoveGroup
+from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from shape_msgs.msg import SolidPrimitive
 from rclpy.callback_groups import ReentrantCallbackGroup
-from tf2_ros.transform_listener import TransformListener
-from tf2_ros.buffer import Buffer
+
 
 
 class MoveitAPI(Node):
@@ -19,14 +18,24 @@ class MoveitAPI(Node):
     def __init__(self):
         super().__init__('moveit_api')
 
+        # Declare and get Parameters
+        self.declare_parameter('base_frame_id', 'panda_link0')
+        self.declare_parameter('end_effector_link', 'panda_link8')
+        self.declare_parameter('group_name', 'panda_manipulator')
+        self.base_frame_id = self.get_parameter('base_frame_id').get_parameter_value().string_value
+        self.end_effector_link = self.get_parameter('end_effector_link').get_parameter_value().string_value
+        self.group_name = self.get_parameter('group_name').get_parameter_value().string_value
+
+        # Create Reentrant Callback Group
         self.cbgroup = ReentrantCallbackGroup()
 
         # Subscriber for joint state messages
         self.joint_state_sub = self.create_subscription(JointState, "joint_states", self.joint_state_callback, 10)
         self.joint_state_msg = None
 
-        # Create services to generate motion plan and place box
+        # Create services to generate motion plan, execute motion plan, and place box
         self.plan = self.create_service(Plan, "plan", self.generate_motion_plan, callback_group=self.cbgroup)
+        self.execute = self.create_service(Empty, "execute", self.execute_trajectory, callback_group=self.cbgroup)
         self.place_box = self.create_service(PlaceBox, "place_box", self.place_box_callback, callback_group=self.cbgroup)
 
         # Create service client to comput IK
@@ -34,10 +43,15 @@ class MoveitAPI(Node):
 
         # Create action client to generate motion plans
         self.plan_client = ActionClient(self, MoveGroup, "move_action")
+        self.motion_plan = None
+
+        # Create action client to execute motion plans
+        self.execute_client = ActionClient(self, ExecuteTrajectory, "execute_trajectory")
 
         # Planning scene service client and publisher
         self.scene_client = self.create_client(GetPlanningScene, "get_planning_scene")
         self.box_publisher = self.create_publisher(PlanningScene, "planning_scene", 10)
+
 
     async def place_box_callback(self, request, response):
         """
@@ -257,10 +271,38 @@ class MoveitAPI(Node):
         plan_req = self.build_plan_request(start_joint_state, request.goal_pose, request.plan_mode, request.plan_only)
 
         # Call the move action client
-        self.future_response = await self.plan_client.send_goal_async(plan_req)
-        self.plan_response = await self.future_response.get_result_async()
+        future_response = await self.plan_client.send_goal_async(plan_req)
+        plan_response = await future_response.get_result_async()
+        self.motion_plan = plan_response
 
         return response
+    
+    async def execute_trajectory(self, request, response):
+        """
+        Executes a previously computed motion plan.
+
+        Args
+        ----
+            request (Empty): An Empty request
+
+        Returns
+        -------
+           An EmptyResponse object
+
+        """
+        # If a motion plan has been computed
+        if self.motion_plan is not None:
+            execute_req = ExecuteTrajectory.Goal()
+            execute_req.trajectory = self.motion_plan.result.planned_trajectory
+
+            future_response = await self.execute_client.send_goal_async(execute_req)
+            execute_response = await future_response.get_result_async()
+
+        # Otherwise, display an error to the user
+        else:
+            self.get_logger().error("No motion plan computed.")
+
+        return response   
     
     def joint_state_callback(self, msg):
         """
