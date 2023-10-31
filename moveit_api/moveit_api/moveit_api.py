@@ -1,12 +1,15 @@
 import rclpy
 from rclpy.node import Node
-from moveit_interfaces.srv import PoseSrv, PlaceBox
+from moveit_interfaces.srv import PoseSrv, PlaceBox, Plan
 from std_srvs.srv import Empty
 from geometry_msgs.msg import Pose
+from sensor_msgs.msg import JointState
 from moveit_msgs.msg import PositionIKRequest, CollisionObject, PlanningScene, PlanningSceneComponents
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene
 from shape_msgs.msg import SolidPrimitive
 from rclpy.callback_groups import ReentrantCallbackGroup
+from tf2_ros.transform_listener import TransformListener
+from tf2_ros.buffer import Buffer
 
 
 class MoveitAPI(Node):
@@ -19,16 +22,14 @@ class MoveitAPI(Node):
         timer_period = 0.5  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
-        self.initial_pose = Pose()
-        self.goal_pose = Pose()
-        self.req = PositionIKRequest()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # Create Services
-        self.set_initial = self.create_service(PoseSrv, 'set_initial', self.initial_pose_callback)
-        self.set_goal = self.create_service(Empty, 'set_goal', self.goal_pose_callback)
+        self.joint_state_sub = self.create_subscription(JointState, "joint_states", self.joint_state_callback, 10)
+        self.joint_state_msg = None
 
-        # Create Service Clients
-        self.pos_ik_client = self.create_client(GetPositionIK, "compute_ik")
+        self.plan = self.create_service(Plan, "plan", self.plan_callback, callback_group=self.cbgroup)
+        self.ik_client = self.create_client(GetPositionIK, "compute_ik", callback_group=self.cbgroup)
 
         # Box
         self.box_publisher = self.create_publisher(PlanningScene, "planning_scene", 10)
@@ -36,7 +37,15 @@ class MoveitAPI(Node):
         self.scene_client = self.create_client(GetPlanningScene, "get_planning_scene")
 
     def timer_callback(self):
-        pass
+        """
+        Set up the transform listener to get the end effector position information.
+        """
+        try:
+            self.base_ee_tf = self.tf_buffer.lookup_transform('panda_link0', 'panda_hand_tcp', rclpy.time.Time())
+        
+            self.get_logger().info("Panda TF: RECEIVED",once=True)
+        except:
+            self.get_logger().warn("Panda TF: WAITING")
 
     async def place_box_callback(self, request, response):
         """
@@ -83,71 +92,51 @@ class MoveitAPI(Node):
 
         return response
     
-    
-    def initial_pose_callback(self, request, response):
-        
-        self.initial_pose = request.pose
+    def get_ik_rqst_msg(self, pose):
 
-        self.start_IK_Callback()
+        ikmsg = PositionIKRequest()
+        ikmsg.group_name = 'panda_manipulator'
+        ikmsg.robot_state.joint_state = self.joint_state_msg
+        ikmsg.pose_stamped.header.frame_id = 'panda_link0'
+        ikmsg.pose_stamped.header.stamp = self.get_clock().now().to_msg()
+        ikmsg.pose_stamped.pose.position.x = pose.position.x
+        ikmsg.pose_stamped.pose.position.y = pose.position.y
+        ikmsg.pose_stamped.pose.position.z = pose.position.z
+        ikmsg.pose_stamped.pose.orientation.x = pose.orientation.x
+        ikmsg.pose_stamped.pose.orientation.y = pose.orientation.y
+        ikmsg.pose_stamped.pose.orientation.z = pose.orientation.z
+        ikmsg.pose_stamped.pose.orientation.w = pose.orientation.w
+        ikmsg.timeout.sec = 5
+
+        return ikmsg
+    
+    async def compute_ik(self, pose):
+
+        msg = self.get_ik_rqst_msg(pose)
+
+        self.ik_response = await self.ik_client.call_async(GetPositionIK.Request(ik_request=msg))
+
+        self.get_logger().info(str(self.ik_response.error_code))
+
+        return self.ik_response.solution.joint_state
+    
+    async def plan_callback(self, request, response):
+        
+        # If start_pose is provided
+        if request.use_start_pose == True:
+
+            start_joint_angles = await self.compute_ik(request.start_pose)
+
+        else:
+
+            start_joint_angles = self.joint_state_msg.position
+
+        self.get_logger().info(str(start_joint_angles))
 
         return response
     
-    def goal_pose_callback(self, request, response):
-        
-        self.goal_pose = request.pose
-
-        self.get_logger().info(str(self.initial_pose.position.x))
-
-        return response
-    
-    def start_IK_Callback(self):
-        """
-        Populate desired starting configuration.
-
-        This function send updated request with desired starting configuration and
-        calls the compute_ik service.
-
-        Returns
-        -------
-            None
-
-        """
-
-        # Populate IK Request
-        self.req.group_name = 'panda_manipulator'
-        self.req.robot_state.joint_state.header.stamp = self.get_clock().now().to_msg()
-        self.req.robot_state.joint_state.header.frame_id = 'panda_link0'
-        self.req.robot_state.joint_state.name = ['panda_joint1', 'panda_joint2', 'panda_joint3',
-                                                'panda_joint4', 'panda_joint5', 'panda_joint6',
-                                                'panda_joint7']
-        self.req.robot_state.joint_state.position = self.initial_joint_states
-        self.req.robot_state.multi_dof_joint_state.header.stamp = self.get_clock().now().to_msg()
-        self.req.robot_state.multi_dof_joint_state.header.frame_id = 'panda_link0'
-        self.req.robot_state.multi_dof_joint_state.joint_names = ['panda_joint1', 'panda_joint2',
-                                                                 'panda_joint3', 'panda_joint4',
-                                                                 'panda_joint5', 'panda_joint6',
-                                                                 'panda_joint7']
-        self.req.robot_state.is_diff = False
-        self.req.avoid_collisions = True
-        self.req.ik_link_name = 'panda_link8'
-        self.req.pose_stamped.header.stamp = self.get_clock().now().to_msg()
-        self.req.pose_stamped.header.frame_id = 'panda_link0'
-        self.req.pose_stamped.pose.position.x = self.initial_pose.position.x
-        self.req.pose_stamped.pose.position.y = self.initial_pose.position.y
-        self.req.pose_stamped.pose.position.z = self.initial_pose.position.z
-        self.req.pose_stamped.pose.orientation.x = self.initial_pose.orientation.x
-        self.req.pose_stamped.pose.orientation.y = self.initial_pose.orientation.y
-        self.req.pose_stamped.pose.orientation.z = self.initial_pose.orientation.z
-        self.req.pose_stamped.pose.orientation.w = self.initial_pose.orientation.w
-        self.req.ik_link_names = ['panda_hand', 'panda_hand_tcp', 'panda_leftfinger', 'panda_link0',
-                                 'panda_link1', 'panda_link2', 'panda_link3', 'panda_link4',
-                                 'panda_link5', 'panda_link6', 'panda_link7', 'panda_link8',
-                                 'panda_rightfinger']
-        self.req.pose_stamped_vector = []
-        self.req.timeout.sec = 60
-
-        # Call Compute_IK
-        self.future_start_IK = self.pos_ik_client.call_async(GetPositionIK.Request(ik_request=self.req))
+    def joint_state_callback(self, msg):
+        self.joint_state_msg = msg
         
 def main(args=None):
     rclpy.init(args=args)
