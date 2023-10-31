@@ -1,3 +1,5 @@
-<node pkg="turtle_brick" exec="arena" name="arena">
-    <param from="$(find-pkg-share turtle_brick)/turtle.yaml" />
-</node>
+<launch>
+    <node pkg="moveit_api" exec="mv_api" name="moveit_api">
+        <param from="$(find-pkg-share moveit_api)/robot_params.yaml" />
+    </node>
+</launch>

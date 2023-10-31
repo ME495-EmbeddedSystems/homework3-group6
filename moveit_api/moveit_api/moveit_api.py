@@ -80,8 +80,8 @@ class MoveitAPI(Node):
 
         box = CollisionObject()
         box.header.stamp = self.get_clock().now().to_msg()
-        box.header.frame_id = "panda_link0"
-        box.id = "my_box"
+        box.header.frame_id = self.base_frame_id
+        box.id = 'my_box'
         box.pose.position.x = request.x
         box.pose.position.y = request.y
         box.pose.position.z = request.z
@@ -112,9 +112,9 @@ class MoveitAPI(Node):
 
         """
         pos_ik_req = PositionIKRequest()
-        pos_ik_req.group_name = 'panda_manipulator'
+        pos_ik_req.group_name = self.group_name
         pos_ik_req.robot_state.joint_state = self.joint_state_msg
-        pos_ik_req.pose_stamped.header.frame_id = 'panda_link0'
+        pos_ik_req.pose_stamped.header.frame_id = self.base_frame_id
         pos_ik_req.pose_stamped.header.stamp = self.get_clock().now().to_msg()
         pos_ik_req.pose_stamped.pose.position.x = pose.position.x
         pos_ik_req.pose_stamped.pose.position.y = pose.position.y
@@ -168,8 +168,8 @@ class MoveitAPI(Node):
             BV.primitive_poses = [pose]
 
             position_constraint = PositionConstraint()
-            position_constraint.header.frame_id = 'panda_link0'
-            position_constraint.link_name = 'panda_link8'
+            position_constraint.header.frame_id = self.base_frame_id
+            position_constraint.link_name = self.end_effector_link
             position_constraint.constraint_region = BV
             position_constraint.weight = 1.0
 
@@ -177,8 +177,8 @@ class MoveitAPI(Node):
 
         if plan_mode == 1 or plan_mode == 2:
             orientation_constraint = OrientationConstraint()
-            orientation_constraint.header.frame_id = 'panda_link0'
-            orientation_constraint.link_name = 'panda_link8'
+            orientation_constraint.header.frame_id = self.base_frame_id
+            orientation_constraint.link_name = self.end_effector_link
             orientation_constraint.orientation = goal_pose.orientation
             orientation_constraint.absolute_x_axis_tolerance = 1e-3
             orientation_constraint.absolute_y_axis_tolerance = 1e-3
@@ -196,11 +196,11 @@ class MoveitAPI(Node):
         req.workspace_parameters.max_corner.x = 1.0
         req.workspace_parameters.max_corner.y = 1.0
         req.workspace_parameters.max_corner.z = 1.0
-        req.workspace_parameters.header.frame_id = 'panda_link0'
+        req.workspace_parameters.header.frame_id = self.base_frame_id
         req.start_state.joint_state = start_state
         req.goal_constraints = [goal_constraints]
         req.pipeline_id = 'move_group'
-        req.group_name = 'panda_manipulator'
+        req.group_name = self.group_name
         req.num_planning_attempts = 1
         req.allowed_planning_time = 5.0
         req.max_velocity_scaling_factor = 0.1
