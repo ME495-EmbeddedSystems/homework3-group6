@@ -1,4 +1,5 @@
-# Group 6 Homework 3: Part 2
+# `moveit_api` Package
+
 Authors: 
 - Luke Batteas
 - Rohan Kota
@@ -6,11 +7,50 @@ Authors:
 - Zach Alves
 - Aditya Naie
 
-## `moveit_api` Package
+<br>
 
 This package allows you to easily generate and execute motion plans. It also allows you to place boxes in the planning scene.
 
-### Planning a path
+## Launching the node
+
+You can run the moveit api using the following command:
+
+```
+ros2 launch moveit_api moveit_api.launch.xml "robot_param_file:=panda_params.yaml"
+```
+
+<br>
+
+### robot_param_file argument:
+
+You can specify the parameter file for the robot through the `robot_param_file` argument. The `moveit_api.launch.xml` launch file will launch an api for the Panda Arm by default if this argument is not specified.
+- __Panda Arm:__ `ros2 launch moveit_api moveit_api.launch.xml "robot_param_file:=panda_params.yaml"`
+- __Interbotix PX100 Arm:__ `ros2 launch moveit_api moveit_api.launch.xml "robot_param_file:=interbotix_params.yaml"`
+
+<br>
+
+__Required Parameters__:
+- `namespace`: The namespace used by the robot (a blank string indicates no namespace).
+- `base_frame_id`: The name of the robot's base frame that all the specified poses are relative to.
+- `end_effector_link`: The end effector link that we are planning for.
+- `group_name`: The name of the planning group.
+
+<br>
+
+Here is an example of the param file for the Panda Arm:
+
+```yaml
+/moveit_api:
+  ros__parameters:
+    namespace: ''
+    base_frame_id: 'panda_link0'
+    end_effector_link: 'panda_link8'
+    group_name: 'panda_manipulator'
+```
+
+<br>
+
+## Planning a path
 
 You can plan a path by calling the `/plan` service.
 
@@ -36,7 +76,7 @@ ros2 service call /plan moveit_interfaces/srv/Plan "{start_pose: {position: {x: 
 
 <br>
 
-### Executing a motion plan
+## Executing a motion plan
 
 You can execute a previously computed motion plan by calling the `/execute` service.
 
@@ -50,7 +90,7 @@ ros2 service call /execute std_srvs/srv/Empty "{}"
 
 <br>
 
-### Placing a box in the planning scene
+## Placing a box in the planning scene
 
 You can plan a path by calling the `/place_box` service.
 

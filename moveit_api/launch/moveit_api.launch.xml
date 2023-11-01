@@ -1,5 +1,7 @@
 <launch>
+    <arg name="robot_param_file" default="panda_params.yaml" description="The name of the robot param file."/>
+
     <node pkg="moveit_api" exec="mv_api" name="moveit_api">
-        <param from="$(find-pkg-share moveit_api)/robot_params.yaml" />
+        <param from="$(find-pkg-share moveit_api)/$(var robot_param_file)" />
     </node>
 </launch>

@@ -19,18 +19,27 @@ class MoveitAPI(Node):
         super().__init__('moveit_api')
 
         # Declare and get Parameters
+        self.declare_parameter('namespace', '')
         self.declare_parameter('base_frame_id', 'panda_link0')
         self.declare_parameter('end_effector_link', 'panda_link8')
         self.declare_parameter('group_name', 'panda_manipulator')
+        self.namespace = self.get_parameter('namespace').get_parameter_value().string_value
         self.base_frame_id = self.get_parameter('base_frame_id').get_parameter_value().string_value
         self.end_effector_link = self.get_parameter('end_effector_link').get_parameter_value().string_value
         self.group_name = self.get_parameter('group_name').get_parameter_value().string_value
+        self.joint_state_topic = 'joint_states'
+
+        # Append namespace to variables if necessary
+        if self.namespace != '':
+            self.joint_state_topic = self.namespace + '/' + self.joint_state_topic
+            self.base_frame_id = self.namespace + '/' + self.base_frame_id
+            self.end_effector_link = self.namespace + '/' + self.end_effector_link
 
         # Create Reentrant Callback Group
         self.cbgroup = ReentrantCallbackGroup()
 
         # Subscriber for joint state messages
-        self.joint_state_sub = self.create_subscription(JointState, "joint_states", self.joint_state_callback, 10)
+        self.joint_state_sub = self.create_subscription(JointState, self.joint_state_topic, self.joint_state_callback, 10)
         self.joint_state_msg = None
 
         # Create services to generate motion plan, execute motion plan, and place box
