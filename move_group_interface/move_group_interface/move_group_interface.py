@@ -4,8 +4,8 @@ from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
 # https://wiki.ros.org/moveit_msgs
-from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject
-from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene
+from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject, PositionIKRequest
+from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene, GetPositionIK, GetPositionFK
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory, Pickup
 from geometry_msgs.msg import PoseStamped, Pose
 from shape_msgs.msg import SolidPrimitive
@@ -136,6 +136,15 @@ class MoveGroupInterface():
         self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"get_planning_scene", callback_group=self.cb_group_)
         if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for get_planning_scene service")
+        
+        self.compute_ik_service_ = self.node_.create_client(GetPositionIK, self.namespace_+"compute_ik", callback_group=self.cb_group_)
+        if not self.compute_ik_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for compute_ik service")
+
+        self.compute_fk_service_ = self.node_.create_client(GetPositionFK, self.namespace_+"compute_fk", callback_group=self.cb_group_)
+        if not self.compute_fk_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for compute_fk service")
+
 
 
     """
@@ -509,7 +518,7 @@ class MoveGroupInterface():
         # If plan_only = False (executing trajectory right after), MUST start at current state
         if((start_state is None and self.start_state_ is None) or not(plan_only)):
             self.setStartState(self.current_state_)
-        elif(not(start_state is none)):
+        elif(not(start_state is None)):
             self.setStartState(start_state)
         
         goal = MoveGroup.Goal()
