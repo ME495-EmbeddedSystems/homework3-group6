@@ -3,3 +3,6 @@
 
 capture/*
 *.pyc
+
+
+__pycache__

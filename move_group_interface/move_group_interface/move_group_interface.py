@@ -1,82 +1,23 @@
 import rclpy
 from rclpy.node import Node
-import asyncio
-
 from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
 # https://wiki.ros.org/moveit_msgs
 from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject
 from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene
-from moveit_msgs.action import MoveGroup, ExecuteTrajectory
-
+from moveit_msgs.action import MoveGroup, ExecuteTrajectory, Pickup
 from geometry_msgs.msg import PoseStamped, Pose
 from shape_msgs.msg import SolidPrimitive
-
 from sensor_msgs.msg import JointState
-from enum import Enum, auto
-
 from action_msgs.msg import GoalStatus
 
-import tf2_ros
-from tf2_ros import TransformBroadcaster
-from tf2_ros.buffer import Buffer
-from tf2_ros.transform_listener import TransformListener
-
-class MoveApi(Node):
-    def __init__(self):
-        super().__init__("MoveApi")
-
-        joint_names = ['panda_joint1','panda_joint2','panda_joint3','panda_joint4','panda_joint5','panda_joint6','panda_joint7']
-        group_name = 'panda_manipulator'
-        end_effector_link = 'panda_link8'
-
-        self.robotModel = RobotModel(group_name, joint_names, end_effector_link)
-        self.API = MoveGroupInterface(self, self.robotModel)
-        self.API.setWorkspaceParamaters('panda_link0',-1.0, 1.0, -1.0, 1.0, -1.0, 1.0)
-        self.API.setPlanningPipelineID("move_group")
-
-        self.box = SolidPrimitive()
-        self.box.type = 1
-        self.box.dimensions = [0.5,0.5,0.5]
-
-        self.box_pose = PoseStamped()
-        self.box_pose.header.frame_id = "panda_link0"
-        self.box_pose.pose.position.x = 1.0
-        self.box_pose.pose.position.y = 1.0
-        self.box_pose.pose.position.z = 0.0
-
-        poseGoal = PoseStamped()
-        poseGoal.header.frame_id = "panda_link0"
-        poseGoal.pose.position.z = 0.2
-        poseGoal.pose.position.x = 0.2
-        self.API.addOrientationConstraint(poseGoal)
-        self.API.addPositionConstraint(poseGoal)
-        
-        self.res = None
-        self.traj = None
-        
-        tmr = self.create_timer(0.01, self.timer_callback)
-        self.i = 0
-
-    async def timer_callback(self):
-        self.i +=1
-        if(self.i == 50):
-            await self.API.addCollisionObject(self.box, self.box_pose)
-
-        if(self.i == 100):
-            self.res, self.stat1 = await self.API.makeMotionPlanRequest(plan_only=True)
-            self.traj = self.res.planned_trajectory
-        
-        if(not(self.traj is None) and self.i == 300):
-            self.res2, self.stat2 = await self.API.executeTrajectory(self.traj)
-
-        
 # https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/include/moveit/move_group_interface/move_group_interface.h
 # https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/src/move_group_interface.cpp
 # https://docs.ros.org/en/noetic/api/moveit_ros_planning_interface/html/move__group__interface_8cpp_source.html#l00407
+
 """
-/planning_scene
+/planning_scene -- Check
 /planning_scene_world
 /recognized_object_array
 /robot_description
@@ -102,12 +43,15 @@ Services
 
 """
 
+
 class RobotModel():
 
-    def __init__(self, group_name, joint_names, default_end_effector=None,desc="robot_description"):
+    def __init__(self, group_name, joint_names, default_end_effector=None, default_base_link=None, robot_namespace="", desc="robot_description"):
         self.group_name = group_name
         self.joint_names = joint_names
         self.default_end_effector = default_end_effector
+        self.default_base_link = default_base_link
+        self.robot_namespace = robot_namespace
         self.robot_description = desc
 
 class MoveGroupInterface():
@@ -117,6 +61,8 @@ class MoveGroupInterface():
         self.robot_description_ = robotModel.robot_description #unused
         self.joint_names_ = robotModel.joint_names
         self.end_effector_link_ = robotModel.default_end_effector
+        self.base_link_ = robotModel.default_base_link
+        self.robot_namespace_ = robotModel.robot_namespace
 
         self.namespace_ = namespace #Nice option but also unused 
         self.node_ = node
@@ -157,37 +103,37 @@ class MoveGroupInterface():
         self.position_constraints_ = []
         self.orientation_constraints_ = []
         self.joint_constraints_ = []
-        self.visibility_constraints_ = [] # Add funcitonality for increasd quality submisison -- doesnt exit rn
+        self.visibility_constraints_ = [] # Add funcitonality for increasd quality submisison -- doesnt exist rn
 
-        self.joint_state_sub_ = self.node_.create_subscription(JointState, "/joint_states", self.joint_state_callback, 10)
+        self.joint_state_sub_ = self.node_.create_subscription(JointState, self.robot_namespace_+"joint_states", self.joint_state_callback, 10)
 
-        self.planning_scene_pub_ = self.node_.create_publisher(PlanningScene, self.namespace_+"/planning_scene", 10)
+        self.planning_scene_pub_ = self.node_.create_publisher(PlanningScene, self.namespace_+"planning_scene", 10)
 
-        self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "/move_action", callback_group=self.cb_group_)
+        self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "move_action", callback_group=self.cb_group_)
         if not self.move_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for move_group action to become available")
 
-        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "/execute_trajectory", callback_group=self.cb_group_)
+        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "execute_trajectory", callback_group=self.cb_group_)
         if not self.execute_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for execute_trajectory action to become available")
         
-        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "/query_planner_interface", callback_group=self.cb_group_)
+        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "query_planner_interface", callback_group=self.cb_group_)
         if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for query_planner_interface service")
 
-        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "/get_planner_params", callback_group=self.cb_group_)
+        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "get_planner_params", callback_group=self.cb_group_)
         if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for get_planner_params service")
 
-        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "/set_planner_params", callback_group=self.cb_group_)
+        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "set_planner_params", callback_group=self.cb_group_)
         if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for set_planner_params service")
 
-        self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "/compute_cartesian_path", callback_group=self.cb_group_)
+        self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "compute_cartesian_path", callback_group=self.cb_group_)
         if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for compute_cartesian_path service")
         
-        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"/get_planning_scene", callback_group=self.cb_group_)
+        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"get_planning_scene", callback_group=self.cb_group_)
         if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for get_planning_scene service")
 
@@ -344,13 +290,16 @@ class MoveGroupInterface():
         if(not(is_diff is None)):
             self.start_state_ .is_diff = is_diff
 
-    def setWorkspaceParamaters(self, frame, minx, maxx, miny, maxy, minz, maxz):
+    def setWorkspaceParamaters(self, minx, maxx, miny, maxy, minz, maxz, frame=None):
         if((isinstance(minx, int) or isinstance(minx, float) ) and
            (isinstance(miny, int) or isinstance(miny, float) ) and
            (isinstance(minz, int) or isinstance(minz, float) ) and
            (isinstance(maxx, int) or isinstance(maxx, float) ) and
            (isinstance(maxy, int) or isinstance(maxy, float) ) and
            (isinstance(maxz, int) or isinstance(maxz, float) )):
+
+            if(frame is None):
+                frame = self.base_link_
 
             self.workspace_parameters_ = WorkspaceParameters()
             self.workspace_parameters_.header.frame_id = frame
@@ -392,8 +341,8 @@ class MoveGroupInterface():
         BV = BoundingVolume()
         
         SP = SolidPrimitive()
-        SP.type = 1
-        SP.dimensions = [2 * tolerance, 2 * tolerance, 2 * tolerance]
+        SP.type = 2
+        SP.dimensions = [tolerance]
 
         BV.primitives =  [SP]
         BV.primitive_poses = [pose_stamped.pose]
@@ -438,17 +387,34 @@ class MoveGroupInterface():
         self.clearOrientationConstraints()
         self.clearPositionConstraints()
     
-    def addJointConstraint(self, position, joint_name=None, tol_a=None, tol_b=None, weight=1.0):
+    def addJointConstraints(self, joint_states, tol_a_array=None, tol_b_array=None, weight_array=None):
+        for i in range(len(joint_states.name)):
+            if(tol_a_array is None):
+                tol_a = None
+            else:
+                tol_a = tol_a_array[i]
+
+            if(tol_b_array is None):
+                tol_b = None
+            else:
+                tol_b = tol_b_array[i]
+
+            if(weight_array is None):
+                weight = 1.0
+            else:
+                weight = weigh_array[i]
+
+            self.addJointConstraint(joint_states.name[i], joint_states.position[i], tol_a=tol_a, tol_b=tol_b, weight=weight)
+    
+    def addJointConstraint(self, joint_name, position, tol_a=None, tol_b=None, weight=1.0):
         new_jc = JointConstraint()
 
-        if(joint_name is None):
-            joint_name = self.end_effector_link_
         if(tol_a is None):
             tol_a = self.goal_joint_tolerance_
         if(tol_b is None):
             tol_b = self.goal_joint_tolerance_
             
-        new_jc.name = joint_name
+        new_jc.joint_name = joint_name
         new_jc.position = position
         new_jc.tolerance_above = tol_a
         new_jc.tolerance_below = tol_b
@@ -527,6 +493,7 @@ class MoveGroupInterface():
         request.start_state = self.start_state_
         self.constraints_.position_constraints = self.position_constraints_
         self.constraints_.orientation_constraints = self.orientation_constraints_
+        self.constraints_.joint_constraints = self.joint_constraints_
 
         # !!! Fix this function 
         #self.constraints_ = self.mergeJointConstraints()
@@ -619,14 +586,3 @@ class MoveGroupInterface():
         """Clean up after planning"""
         self.clearAllConstraints()
         self.start_state_ = None
-
-def main(args=None):
-    """Run api node."""
-    rclpy.init(args=args)
-    myMoveApi= MoveApi()
-    rclpy.spin(myMoveApi)
-    rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
