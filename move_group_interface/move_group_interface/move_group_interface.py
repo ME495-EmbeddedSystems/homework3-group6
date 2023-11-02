@@ -3,6 +3,8 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
+import numpy as np
+
 # https://wiki.ros.org/moveit_msgs
 from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject, PositionIKRequest
 from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene, GetPositionIK, GetPositionFK
@@ -82,7 +84,7 @@ class MoveGroupInterface():
         self.look_around_attempts_ = 0
         self.can_replan_ = False
         self.replan_delay_ = 2.0
-        self.replan_attempts_ = 10
+        self.replan_attempts_ = 1
         self.goal_joint_tolerance_ = 1e-4
         self.goal_position_tolerance_ = 1e-4
         self.goal_orientation_tolerance_ = 1e-3
@@ -289,15 +291,8 @@ class MoveGroupInterface():
         return self.num_planning_attemps_
 
     def setStartState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
-        # !!! Fix this
-        self.start_state_ = RobotState()
-        self.start_state_.joint_state = joint_values
-        if(not(mdof_joint_values is None)):
-            self.start_state_ .multi_dof_joint_state = mdof_joint_values
-        if(not(attached_objects is None)):
-            self.start_state_ .attached_collision_objects = attached_objects
-        if(not(is_diff is None)):
-            self.start_state_ .is_diff = is_diff
+        
+        self.start_state_ = self.jointsToRobotState(joint_values, mdof_joint_values, attached_objects, is_diff)
 
     def setWorkspaceParamaters(self, minx, maxx, miny, maxy, minz, maxz, frame=None):
         if((isinstance(minx, int) or isinstance(minx, float) ) and
@@ -391,6 +386,35 @@ class MoveGroupInterface():
     def addPoseConstraint(self, pose_stamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
         self.addOrientationConstraint(pose_stamped, link=link, tolerance=ang_tol, weight=weight)
         self.addPositionConstraint(pose_stamped, link=link, tolerance=lin_tol, weight=weight)
+    
+    def addPoseConstraints(self, pose_stamped_array, link_array, lin_tol_array=None, ang_tol_array=None, weight_array=1.0):
+        for i in range(len(pose_stamped_array)):
+            if(lin_tol_array is None):
+                lin_tol = None
+            elif(isinstance(lin_tol_array, int) or isinstance(lin_tol_array, float)):
+                lin_tol = lin_tol_array
+            else:
+                lin_tol = lin_tol_array[i]
+
+            if(ang_tol_array is None):
+                ang_tol = None
+            elif(isinstance(ang_tol_array, int) or isinstance(ang_tol_array, float)):
+                ang_tol = ang_tol_array
+            else:
+                ang_tol = ang_tol_array[i]
+
+            if(weight_array is None):
+                weight = 1.0
+            elif(isinstance(weight_array, int) or isinstance(weight_array, float)):
+                weight = weight_array
+            else:
+                weight = weight_array[i]
+            self.addPoseConstraint(pose_stamped_array[i], link=link_array[i], lin_tol=lin_tol, ang_tol=ang_tol, weight=weight)
+
+    
+    async def addPoseConstraintFromJoints(self, joint_state, base_frame=None, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        poses, names, err = await self.computeFK(joint_values, base_frame=base_frame, link_names=link_names, mdof_joint_values=mdof_joint_values, attached_objects=attached_objects, is_diff = is_diff)
+
 
     def clearPoseConstraints(self):
         self.clearOrientationConstraints()
@@ -400,19 +424,25 @@ class MoveGroupInterface():
         for i in range(len(joint_states.name)):
             if(tol_a_array is None):
                 tol_a = None
+            elif(isinstance(tol_a_array, int) or isinstance(tol_a_array, float)):
+                tol_a = tol_a_array
             else:
                 tol_a = tol_a_array[i]
 
             if(tol_b_array is None):
                 tol_b = None
+            elif(isinstance(tol_b_array, int) or isinstance(tol_b_array, float)):
+                tol_b = tol_b_array
             else:
                 tol_b = tol_b_array[i]
 
             if(weight_array is None):
                 weight = 1.0
+            elif(isinstance(weight_array, int) or isinstance(weight_array, float)):
+                weight = weight_array
             else:
-                weight = weigh_array[i]
-
+                weight = weight_array[i]
+            
             self.addJointConstraint(joint_states.name[i], joint_states.position[i], tol_a=tol_a, tol_b=tol_b, weight=weight)
     
     def addJointConstraint(self, joint_name, position, tol_a=None, tol_b=None, weight=1.0):
@@ -422,7 +452,7 @@ class MoveGroupInterface():
             tol_a = self.goal_joint_tolerance_
         if(tol_b is None):
             tol_b = self.goal_joint_tolerance_
-            
+        
         new_jc.joint_name = joint_name
         new_jc.position = position
         new_jc.tolerance_above = tol_a
@@ -430,6 +460,18 @@ class MoveGroupInterface():
         new_jc.weight = weight
 
         self.joint_constraints_.append(new_jc)
+    
+    async def addJointConstraintFromPose(self, pose_stamped, link=None, start_guess=None, constraints=None, tol_a=None, tol_b=None, weight=1.0):
+        sol, err = await self.computeIK(pose_stamped, link, start_guess, constraints)
+        JS = JointState()
+        for i in range(len(sol.joint_state.name)):
+            for j in self.joint_names_:
+                if(sol.joint_state.name[i] == j):
+                    JS.name.append(sol.joint_state.name[i])
+                    JS.position.append(sol.joint_state.position[i])
+
+        self.addJointConstraints(JS, tol_a_array=tol_a, tol_b_array=tol_b, weight_array=weight)
+        
 
     def clearJointConstraints(self):
         self.joint_constraints_ = []
@@ -478,6 +520,18 @@ class MoveGroupInterface():
     Action functions
 
     """
+
+    def jointsToRobotState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        
+        RS = RobotState()
+        RS.joint_state = joint_values
+        if(not(mdof_joint_values is None)):
+            RS.multi_dof_joint_state = mdof_joint_values
+        if(not(attached_objects is None)):
+            RS.attached_collision_objects = attached_objects
+        if(not(is_diff is None)):
+            RS.is_diff = is_diff
+        return RS
 
     def constructPlannerOptions(self, plan_only=True):
         options = PlanningOptions()
@@ -573,6 +627,45 @@ class MoveGroupInterface():
                     self.current_state_.position.append(msg.position[i])
                     self.current_state_.velocity.append(msg.velocity[i])
                     self.current_state_.effort.append(msg.effort[i])
+    
+    async def computeIK(self, pose_stamped, link=None, start_guess=None, constraints=None):
+        # Does not support multiple link submissions
+        # Call ya own service ya bums
+        req = GetPositionIK.Request().ik_request
+        req.group_name = self.group_name_
+        if(start_guess is None):
+            start_guess = self.jointsToRobotState(self.current_state_)
+        req.robot_state = start_guess
+        if(not(constraints is None)):
+            req.constraints = constraints
+        if(link is None):
+            link = self.end_effector_link_
+        req.ik_link_name = link
+        req.pose_stamped = pose_stamped
+        response = await self.compute_ik_service_.call_async(GetPositionIK.Request(ik_request=req))
+        sol = response.solution
+        err = response.error_code
+        return sol, err
+    
+    async def computeFK(self, joint_values, base_frame=None, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        req = GetPositionFK.Request()
+        if(base_frame is None):
+            base_frame = self.base_link_
+        req.header.frame_id = base_frame
+        
+        if(link_names is None):
+            link_names = [self.end_effector_link_]
+        req.fk_link_names = link_names
+
+        RS = self.jointsToRobotState(joint_values, mdof_joint_values, attached_objects, is_diff)
+        req.robot_state = RS
+
+        response = await self.compute_fk_service_.call_async(req)
+        poses = response.pose_stamped
+        names = response.fk_link_names
+        err = response.error_code
+        return poses, names, err
+
 
     async def getPlanningScene(self, components=PlanningSceneComponents()):
         planning_scene = await self.planning_scene_service_.call_async(GetPlanningScene.Request(components=components))
