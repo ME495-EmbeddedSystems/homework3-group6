@@ -3,48 +3,13 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
-import numpy as np
-
-# https://wiki.ros.org/moveit_msgs
-from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject, PositionIKRequest
-from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, GraspPlanning, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene, GetPositionIK, GetPositionFK
-from moveit_msgs.action import MoveGroup, ExecuteTrajectory, Pickup
+from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject, PositionIKRequest, MotionSequenceRequest, MotionSequenceItem
+from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene, GetPositionIK, GetPositionFK
+from moveit_msgs.action import MoveGroup, ExecuteTrajectory, MoveGroupSequence
 from geometry_msgs.msg import PoseStamped, Pose
 from shape_msgs.msg import SolidPrimitive
 from sensor_msgs.msg import JointState
 from action_msgs.msg import GoalStatus
-
-# https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/include/moveit/move_group_interface/move_group_interface.h
-# https://github.com/ros-planning/moveit2/blob/main/moveit_ros/planning_interface/move_group_interface/src/move_group_interface.cpp
-# https://docs.ros.org/en/noetic/api/moveit_ros_planning_interface/html/move__group__interface_8cpp_source.html#l00407
-
-"""
-/planning_scene -- Check
-/planning_scene_world
-/recognized_object_array
-/robot_description
-/robot_description_semantic
-/attached_collision_object
-/clicked_point
-/collision_object
-/diagnostics
-/display_contacts
-/display_planned_path
-/dynamic_joint_states
-/franka/joint_states 
-/goal_pose
-/initialpose
-/trajectory_execution_event
-
-Services
-/apply_planning_scene
-/check_state_validity
-/compute_cartesian_path
-/compute_fk
-/compute_ik
-
-"""
-
 
 class RobotModel():
 
@@ -78,25 +43,28 @@ class MoveGroupInterface():
 
         self.planning_pipeline_id_ = ""
         self.planner_id_ = ""
+
         self.workspace_parameters_ = None
 
         self.can_look_ = False
         self.look_around_attempts_ = 0
+
         self.can_replan_ = False
         self.replan_delay_ = 2.0
         self.replan_attempts_ = 1
+
         self.goal_joint_tolerance_ = 1e-4
         self.goal_position_tolerance_ = 1e-4
         self.goal_orientation_tolerance_ = 1e-3
+
         self.allowed_planning_time_ = 5.0
         self.num_planning_attemps_ = 1
 
+        self.max_velocity_scaling_factor_ = 0.1
+        self.max_acceleration_scaling_factor_ = 0.1 
+
         self.current_state_ = None
         self.start_state_ = None
-
-        # !!! Add setters / getters for this, check if paramters exist else default to value
-        self.max_velocity_scaling_factor_ = 0.1 #self.node_.get_parameter("velocity_scaling_factor").get_parameter_value().double_value
-        self.max_acceleration_scaling_factor_ = 0.1 #self.node_.get_parameter("acceleration_scaling_factor").get_parameter_value().double_value
 
         self.initalizing_constraints_ = False
 
@@ -147,14 +115,45 @@ class MoveGroupInterface():
         if not self.compute_fk_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for compute_fk service")
 
-
-
     """
 
     Setters / Getters 
     !!! (Sort them? Alpha?)
 
     """
+
+    def setMaxVelocityScaling(self, n):
+        if isinstance(n, float) or isinstance(n, int):
+            if(n >= 0.01):
+                if(n > 1.0):
+                    self.logger_.info("Maximum velocity factor exceeding 1.0. Limiting.")
+                    self.max_velocity_scaling_factor_ = 1.0
+                else:
+                    self.max_velocity_scaling_factor_ = n
+            else:
+                self.logger_.info("Maximum velocity scaling set below allowed minimum of 0.01. Disregarding.")
+        else:
+            self.logger_.info("Attempt to set max_velocity_scaling_factor to invalid type")
+    
+    def getMaxVelocityScaling(self):
+        return self.max_velocity_scaling_factor_
+    
+    def setMaxAccelerationScaling(self, n):
+        if isinstance(n, float) or isinstance(n, int):
+            if(n >= 0.01):
+                if(n > 1.0):
+                    self.logger_.info("Maximum acceleration factor exceeding 1.0. Limiting.")
+                    self.max_acceleration_scaling_factor_ = 1.0
+                else:
+                    self.max_acceleration_scaling_factor_ = n
+            else:
+                self.logger_.info("Maximum acceleration scaling set below allowed minimum of 0.01. Disregarding.")
+        else:
+            self.logger_.info("Attempt to set max_acceleration_scaling_factor to invalid type")
+    
+    def getMaxAccelerationScaling(self):
+        return self.max_acceleration_scaling_factor_
+    
 
     def setPlannerParams(self, planner_id, group, params, replace=False):
         request = SetPlannerParams()
@@ -317,7 +316,7 @@ class MoveGroupInterface():
             self.workspace_parameters_.max_corner.y = maxy
             self.workspace_parameters_.max_corner.z = maxz
         else:
-            self.logger_().error("Attempt to set workspace parameter coordiante to invalid type")
+            self.logger_().error("Attempt to set workspace parameter coordinate to invalid type")
     
     """
 
@@ -412,8 +411,12 @@ class MoveGroupInterface():
             self.addPoseConstraint(pose_stamped_array[i], link=link_array[i], lin_tol=lin_tol, ang_tol=ang_tol, weight=weight)
 
     
-    async def addPoseConstraintFromJoints(self, joint_state, base_frame=None, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+    async def addPoseConstraintFromJoints(self, joint_state, base_frame=None, lin_tol_array=None, ang_tol_array=None, weight_array=1.0, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
         poses, names, err = await self.computeFK(joint_values, base_frame=base_frame, link_names=link_names, mdof_joint_values=mdof_joint_values, attached_objects=attached_objects, is_diff = is_diff)
+        if(err.val == 1):
+            self.addPoseConstraints(poses, names, lin_tol_array=lin_tol_array, ang_tol_array=ang_tol_array, weight_array=weight_array)
+        else:
+            self.logger_.info('Forward Kinematics failed with code: {0}'.format(err.val))
 
 
     def clearPoseConstraints(self):
@@ -463,15 +466,16 @@ class MoveGroupInterface():
     
     async def addJointConstraintFromPose(self, pose_stamped, link=None, start_guess=None, constraints=None, tol_a=None, tol_b=None, weight=1.0):
         sol, err = await self.computeIK(pose_stamped, link, start_guess, constraints)
-        JS = JointState()
-        for i in range(len(sol.joint_state.name)):
-            for j in self.joint_names_:
-                if(sol.joint_state.name[i] == j):
-                    JS.name.append(sol.joint_state.name[i])
-                    JS.position.append(sol.joint_state.position[i])
-
-        self.addJointConstraints(JS, tol_a_array=tol_a, tol_b_array=tol_b, weight_array=weight)
-        
+        if(err.val == 1):
+            JS = JointState()
+            for i in range(len(sol.joint_state.name)):
+                for j in self.joint_names_:
+                    if(sol.joint_state.name[i] == j):
+                        JS.name.append(sol.joint_state.name[i])
+                        JS.position.append(sol.joint_state.position[i])
+            self.addJointConstraints(JS, tol_a_array=tol_a, tol_b_array=tol_b, weight_array=weight)
+        else:
+            self.logger_.info('Inverse Kinematics failed with code: {0}'.format(err.val))
 
     def clearJointConstraints(self):
         self.joint_constraints_ = []
@@ -665,7 +669,6 @@ class MoveGroupInterface():
         names = response.fk_link_names
         err = response.error_code
         return poses, names, err
-
 
     async def getPlanningScene(self, components=PlanningSceneComponents()):
         planning_scene = await self.planning_scene_service_.call_async(GetPlanningScene.Request(components=components))
