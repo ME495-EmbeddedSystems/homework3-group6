@@ -34,6 +34,7 @@ __Required Parameters__:
 - `base_frame_id`: The name of the robot's base frame that all the specified poses are relative to.
 - `end_effector_link`: The end effector link that we are planning for.
 - `group_name`: The name of the planning group.
+- `use_joint_constraints`: Set to `True` if you want to use joint constraints to construct the motion plan. Set to `False` to use position and orientation constraints instead.
 
 <br>
 
@@ -46,6 +47,7 @@ Here is an example of the param file for the Panda Arm:
     base_frame_id: 'panda_link0'
     end_effector_link: 'panda_link8'
     group_name: 'panda_manipulator'
+    use_joint_constraints: False
 ```
 
 <br>
