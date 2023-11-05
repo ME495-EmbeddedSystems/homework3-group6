@@ -180,7 +180,6 @@ class MoveGroupInterface():
     """
 
     Setters / Getters 
-    !!! (Sort them? Alpha?)
 
     """
 
@@ -451,105 +450,28 @@ class MoveGroupInterface():
 
     """
 
-    def addPositionConstraint(self, pose_stamped, link=None, offset=None, tolerance=None, weight=1.0):
-        new_pc = PositionConstraint()
-        new_pc.header = pose_stamped.header
+    def clearAllConstraints(self):
+        self.clearPoseConstraints()
+        self.clearJointConstraints()  
 
-        if(not(offset is None)):
-            new_pc.target_point_offset.x = offset.x
-            new_pc.target_point_offset.y = offset.y
-            new_pc.target_point_offset.z = offset.z
+    # Joint Constraints
 
-        if(link is None):
-            new_pc.link_name = self.end_effector_link_
-        else:
-            new_pc.link_name = link
+    def addJointConstraint(self, joint_name, position, tol_a=None, tol_b=None, weight=1.0):
+        new_jc = JointConstraint()
+
+        if(tol_a is None):
+            tol_a = self.goal_joint_tolerance_
+        if(tol_b is None):
+            tol_b = self.goal_joint_tolerance_
         
-        if(tolerance is None):
-            tolerance = self.goal_position_tolerance_
+        new_jc.joint_name = joint_name
+        new_jc.position = position
+        new_jc.tolerance_above = tol_a
+        new_jc.tolerance_below = tol_b
+        new_jc.weight = weight
 
-        BV = BoundingVolume()
-        
-        SP = SolidPrimitive()
-        SP.type = 2
-        SP.dimensions = [tolerance]
+        self.joint_constraints_.append(new_jc)
 
-        BV.primitives =  [SP]
-        BV.primitive_poses = [pose_stamped.pose]
-
-        new_pc.constraint_region = BV
-        new_pc.weight = weight
-
-        self.position_constraints_.append(new_pc)
-
-    def clearPositionConstraints(self):
-        self.position_constraints_ = []
-
-    def addOrientationConstraint(self, pose_stamped, link=None, tolerance=None, weight=1.0):
-        new_oc = OrientationConstraint()
-        new_oc.header = pose_stamped.header
-        new_oc.orientation = pose_stamped.pose.orientation
-        if(link is None):
-            new_oc.link_name = self.end_effector_link_
-        else:
-            new_oc.link_name = link
-        
-        if(tolerance is None):
-            new_oc.absolute_x_axis_tolerance = self.goal_orientation_tolerance_
-            new_oc.absolute_y_axis_tolerance = self.goal_orientation_tolerance_
-            new_oc.absolute_z_axis_tolerance = self.goal_orientation_tolerance_
-        else:
-            new_oc.absolute_x_axis_tolerance = tolerance
-            new_oc.absolute_y_axis_tolerance = tolerance
-            new_oc.absolute_z_axis_tolerance = tolerance
-        
-        new_oc.weight = weight
-        self.orientation_constraints_.append(new_oc)
-
-    def clearOrientationConstraints(self):
-        self.orientation_constraints_ = []
-    
-    def addPoseConstraint(self, pose_stamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
-        self.addOrientationConstraint(pose_stamped, link=link, tolerance=ang_tol, weight=weight)
-        self.addPositionConstraint(pose_stamped, link=link, tolerance=lin_tol, weight=weight)
-    
-    def addPoseConstraints(self, pose_stamped_array, link_array, lin_tol_array=None, ang_tol_array=None, weight_array=1.0):
-        for i in range(len(pose_stamped_array)):
-            if(lin_tol_array is None):
-                lin_tol = None
-            elif(isinstance(lin_tol_array, int) or isinstance(lin_tol_array, float)):
-                lin_tol = lin_tol_array
-            else:
-                lin_tol = lin_tol_array[i]
-
-            if(ang_tol_array is None):
-                ang_tol = None
-            elif(isinstance(ang_tol_array, int) or isinstance(ang_tol_array, float)):
-                ang_tol = ang_tol_array
-            else:
-                ang_tol = ang_tol_array[i]
-
-            if(weight_array is None):
-                weight = 1.0
-            elif(isinstance(weight_array, int) or isinstance(weight_array, float)):
-                weight = weight_array
-            else:
-                weight = weight_array[i]
-            self.addPoseConstraint(pose_stamped_array[i], link=link_array[i], lin_tol=lin_tol, ang_tol=ang_tol, weight=weight)
-
-    
-    async def addPoseConstraintFromJoints(self, joint_state, base_frame=None, lin_tol_array=None, ang_tol_array=None, weight_array=1.0, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
-        poses, names, err = await self.computeFK(joint_values, base_frame=base_frame, link_names=link_names, mdof_joint_values=mdof_joint_values, attached_objects=attached_objects, is_diff = is_diff)
-        if(err.val == 1):
-            self.addPoseConstraints(poses, names, lin_tol_array=lin_tol_array, ang_tol_array=ang_tol_array, weight_array=weight_array)
-        else:
-            self.logger_.info('Forward Kinematics failed with code: {0}'.format(err.val))
-
-
-    def clearPoseConstraints(self):
-        self.clearOrientationConstraints()
-        self.clearPositionConstraints()
-    
     def addJointConstraints(self, joint_states, tol_a_array=None, tol_b_array=None, weight_array=None):
         for i in range(len(joint_states.name)):
             if(tol_a_array is None):
@@ -574,23 +496,7 @@ class MoveGroupInterface():
                 weight = weight_array[i]
             
             self.addJointConstraint(joint_states.name[i], joint_states.position[i], tol_a=tol_a, tol_b=tol_b, weight=weight)
-    
-    def addJointConstraint(self, joint_name, position, tol_a=None, tol_b=None, weight=1.0):
-        new_jc = JointConstraint()
 
-        if(tol_a is None):
-            tol_a = self.goal_joint_tolerance_
-        if(tol_b is None):
-            tol_b = self.goal_joint_tolerance_
-        
-        new_jc.joint_name = joint_name
-        new_jc.position = position
-        new_jc.tolerance_above = tol_a
-        new_jc.tolerance_below = tol_b
-        new_jc.weight = weight
-
-        self.joint_constraints_.append(new_jc)
-    
     async def addJointConstraintFromPose(self, pose_stamped, link=None, start_guess=None, constraints=None, tol_a=None, tol_b=None, weight=1.0):
         sol, err = await self.computeIK(pose_stamped, link, start_guess, constraints)
         if(err.val == 1):
@@ -606,10 +512,6 @@ class MoveGroupInterface():
 
     def clearJointConstraints(self):
         self.joint_constraints_ = []
-
-    def clearAllConstraints(self):
-        self.clearPoseConstraints()
-        self.clearJointConstraints()  
 
     def mergeJointConstraints(self):
         # !!! Fix this: Validate, double check logic
@@ -645,6 +547,111 @@ class MoveGroupInterface():
                 merged_jc.append(self.joint_constraints_[i])
         
         self.joint_constraints_ = merged_jc
+
+    # Orientation Constraints
+    
+    def addOrientationConstraint(self, pose_stamped, link=None, tolerance=None, weight=1.0):
+        new_oc = OrientationConstraint()
+        new_oc.header = pose_stamped.header
+        new_oc.orientation = pose_stamped.pose.orientation
+        if(link is None):
+            new_oc.link_name = self.end_effector_link_
+        else:
+            new_oc.link_name = link
+        
+        if(tolerance is None):
+            new_oc.absolute_x_axis_tolerance = self.goal_orientation_tolerance_
+            new_oc.absolute_y_axis_tolerance = self.goal_orientation_tolerance_
+            new_oc.absolute_z_axis_tolerance = self.goal_orientation_tolerance_
+        else:
+            new_oc.absolute_x_axis_tolerance = tolerance
+            new_oc.absolute_y_axis_tolerance = tolerance
+            new_oc.absolute_z_axis_tolerance = tolerance
+        
+        new_oc.weight = weight
+        self.orientation_constraints_.append(new_oc)
+
+    def clearOrientationConstraints(self):
+        self.orientation_constraints_ = []
+
+    # Pose Constraints
+
+    def addPoseConstraint(self, pose_stamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
+        self.addOrientationConstraint(pose_stamped, link=link, tolerance=ang_tol, weight=weight)
+        self.addPositionConstraint(pose_stamped, link=link, tolerance=lin_tol, weight=weight)
+
+    def addPoseConstraints(self, pose_stamped_array, link_array, lin_tol_array=None, ang_tol_array=None, weight_array=1.0):
+        for i in range(len(pose_stamped_array)):
+            if(lin_tol_array is None):
+                lin_tol = None
+            elif(isinstance(lin_tol_array, int) or isinstance(lin_tol_array, float)):
+                lin_tol = lin_tol_array
+            else:
+                lin_tol = lin_tol_array[i]
+
+            if(ang_tol_array is None):
+                ang_tol = None
+            elif(isinstance(ang_tol_array, int) or isinstance(ang_tol_array, float)):
+                ang_tol = ang_tol_array
+            else:
+                ang_tol = ang_tol_array[i]
+
+            if(weight_array is None):
+                weight = 1.0
+            elif(isinstance(weight_array, int) or isinstance(weight_array, float)):
+                weight = weight_array
+            else:
+                weight = weight_array[i]
+            self.addPoseConstraint(pose_stamped_array[i], link=link_array[i], lin_tol=lin_tol, ang_tol=ang_tol, weight=weight)
+
+    
+    async def addPoseConstraintFromJoints(self, joint_state, base_frame=None, lin_tol_array=None, ang_tol_array=None, weight_array=1.0, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        poses, names, err = await self.computeFK(joint_values=joint_state, base_frame=base_frame, link_names=link_names, mdof_joint_values=mdof_joint_values, attached_objects=attached_objects, is_diff = is_diff)
+        if(err.val == 1):
+            self.addPoseConstraints(poses, names, lin_tol_array=lin_tol_array, ang_tol_array=ang_tol_array, weight_array=weight_array)
+        else:
+            self.logger_.info('Forward Kinematics failed with code: {0}'.format(err.val))
+
+    def clearPoseConstraints(self):
+        self.clearOrientationConstraints()
+        self.clearPositionConstraints()
+
+    # Position Constraints
+
+    def addPositionConstraint(self, pose_stamped, link=None, offset=None, tolerance=None, weight=1.0):
+        new_pc = PositionConstraint()
+        new_pc.header = pose_stamped.header
+
+        if(not(offset is None)):
+            new_pc.target_point_offset.x = offset.x
+            new_pc.target_point_offset.y = offset.y
+            new_pc.target_point_offset.z = offset.z
+
+        if(link is None):
+            new_pc.link_name = self.end_effector_link_
+        else:
+            new_pc.link_name = link
+        
+        if(tolerance is None):
+            tolerance = self.goal_position_tolerance_
+
+        BV = BoundingVolume()
+        
+        SP = SolidPrimitive()
+        SP.type = 2
+        SP.dimensions = [tolerance]
+
+        BV.primitives =  [SP]
+        BV.primitive_poses = [pose_stamped.pose]
+
+        new_pc.constraint_region = BV
+        new_pc.weight = weight
+
+        self.position_constraints_.append(new_pc)
+
+    def clearPositionConstraints(self):
+        self.position_constraints_ = []
+        
     
     """
 
