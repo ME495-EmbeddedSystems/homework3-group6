@@ -48,6 +48,10 @@ class MoveGroupInterface():
     SUBSCRIBES:
         jointstates (sensor_msgs/msg/JointState) - TODO
 
+    ACTION CLIENTS:
+        execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - TODO
+        move_action (moveit_msgs/action/MoveGroup) - TODO
+
     SERVICE CLIENTS:
         compute_cartesian_path (moveit_msgs/srv/GetCartesianPath) - TODO
         compute_fk (moveit_msgs/srv/GetPositionFK) - TODO
@@ -56,10 +60,6 @@ class MoveGroupInterface():
         get_planning_scene (moveit_msgs/srv/GetPlanningScene) - TODO
         query_planner_interface (moveit_msgs/srv/QueryPlannerInterfaces) - TODO
         set_planner_params (moveit_msgs/srv/SetPlannerParams) - TODO
-
-    ACTION CLIENTS:
-        execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - TODO
-        move_action (moveit_msgs/action/MoveGroup) - TODO
 
     """
 
@@ -128,7 +128,7 @@ class MoveGroupInterface():
         self.joint_constraints_ = []
         self.visibility_constraints_ = [] # Add funcitonality for increasd quality submisison -- doesnt exist rn
 
-        # PUBLLISHERS
+        # PUBLISHERS
 
         self.planning_scene_pub_ = self.node_.create_publisher(PlanningScene, self.namespace_+"planning_scene", 10)
 
@@ -184,35 +184,76 @@ class MoveGroupInterface():
 
     """
 
-    def setMaxVelocityScaling(self, n):
-        """
-        Set the maximum velocity scaling of the motion plan, defaulting to 0.1.
-
-        Args:
-            n (float / int) : Maximum velocity scaling factor ranging from 0.01 to 1.
-
-        """
-        if isinstance(n, float) or isinstance(n, int):
-            if(n >= 0.01):
-                if(n > 1.0):
-                    self.logger_.info("Maximum velocity factor exceeding 1.0. Limiting.")
-                    self.max_velocity_scaling_factor_ = 1.0
-                else:
-                    self.max_velocity_scaling_factor_ = n
+    def setAllowedPlanningTime(self, n):
+        if isinstance(n, int) or isinstance(n, float):
+            if(float(n) > 0.0):
+                self.allowed_planning_time_ = float(n)
             else:
-                self.logger_.info("Maximum velocity scaling set below allowed minimum of 0.01. Disregarding.")
+                self.logger_.error("Attempt to set allowed_planning_time to impossible time")
         else:
-            self.logger_.info("Attempt to set max_velocity_scaling_factor to invalid type")
+            self.logger_.error("Attempt to set allowed_planning_time to invalid type")
+
+    def getAllowedPlanningTime(self):
+        return self.allowed_planning_time_
+
+    def setCanLook(self, n):
+        if isinstance(n, bool):
+            self.can_look_ = n
+        else:
+            self.logger_.error("Attempt to set can_look to invalid type")
+    def getCanLook(self):
+        return self.can_look_
     
-    def getMaxVelocityScaling(self):
-        """
-        Get the maximum velocity scaling of the motion plan.
+    def setCanReplan(self, n):
+        if isinstance(n, bool):
+            self.can_replan_ = n
+        else:
+            self.logger_.error("Attempt to set can_replan to invalid type")
 
-        Returns:
-            self.max_velocity_scaling_factor (float) : Maximum velocity scaling factor.
+    def getCanReplan(self):
+        return self.can_replan_
+    
+    def getDefaultPlannerID(self):
+        # !!! Fix this. Possible in Ros2 but more annoying
+        default_planner_id = self.node_.get_parameter("move_group/default_planning_pipeline").get_parameter_value().string_value
+        return default_planner_id
+    
+    def setGoalJointTolerance(self, n):
+        if isinstance(n, int) or isinstance(n, float):
+            self.goal_joint_tolerance_ = float(n)
+        else:
+            self.logger_.error("Attempt to set goal_joint_tolerance to invalid type")
 
-        """
-        return self.max_velocity_scaling_factor_
+    def getGoalJointTolerance(self):
+        return self.goal_joint_tolerance_
+    
+    def setGoalOrientationolerance(self, n):
+        if isinstance(n, int) or isinstance(n, float):
+            self.goal_orientation_tolerance_ = float(n)
+        else:
+            self.logger_.error("Attempt to set goal_orientation_tolreance to invalid type")
+
+    def getGoalOrientationolerance(self):
+        return self.goal_orientation_tolerance_
+    
+    def setGoalPositionTolerance(self, n):
+        if isinstance(n, int) or isinstance(n, float):
+            self.goal_position_tolerance_ = float(n)
+        else:
+            self.logger_.error("Attempt to set goal_position_tolerance to invalid type")
+    def getGoalPositionTolerance(self):
+        return self.goal_position_tolerance_
+    
+    def setLookAroundAttemps(self, n):
+        if isinstance(n, int):
+            if(n < 0):
+                self.logger_.error("Attempt to set look attempts negative. Set as positive instead")
+            self.look_around_attempts_ = abs(n)
+        else:
+            self.logger_.error("Attempt to set look_around_attempts to invalid type")
+
+    def getLookAroundAttemps(self):
+        return self.look_around_attempts_
     
     def setMaxAccelerationScaling(self, n):
         """
@@ -243,8 +284,55 @@ class MoveGroupInterface():
 
         """
         return self.max_acceleration_scaling_factor_
-    
 
+    def setMaxVelocityScaling(self, n):
+        """
+        Set the maximum velocity scaling of the motion plan, defaulting to 0.1.
+
+        Args:
+            n (float / int) : Maximum velocity scaling factor ranging from 0.01 to 1.
+
+        """
+        if isinstance(n, float) or isinstance(n, int):
+            if(n >= 0.01):
+                if(n > 1.0):
+                    self.logger_.info("Maximum velocity factor exceeding 1.0. Limiting.")
+                    self.max_velocity_scaling_factor_ = 1.0
+                else:
+                    self.max_velocity_scaling_factor_ = n
+            else:
+                self.logger_.info("Maximum velocity scaling set below allowed minimum of 0.01. Disregarding.")
+        else:
+            self.logger_.info("Attempt to set max_velocity_scaling_factor to invalid type")
+    
+    def getMaxVelocityScaling(self):
+        """
+        Get the maximum velocity scaling of the motion plan.
+
+        Returns:
+            self.max_velocity_scaling_factor (float) : Maximum velocity scaling factor.
+
+        """
+        return self.max_velocity_scaling_factor_
+    
+    def setNumPlanningAttemps(self, n):
+        if isinstance(n, int):
+            self.num_planning_attemps_ = n
+        else:
+            self.logger_.error("Attempt to set num_planning_attempts to invalid type")
+
+    def getNumPlanningAttemps(self):
+        return self.num_planning_attemps_
+    
+    def setPlannerId(self,n):
+        if isinstance(n, str):
+            self.planner_id_ = n
+        else:
+            self.logger_.error("Attempt to set planner_id to invalid type")
+    
+    def getPlannerId(self):
+        return self.planner_id_
+    
     def setPlannerParams(self, planner_id, group, params, replace=False):
         """
         Makes an asynchronous call to the setPlannerParams service through the set_planner_params client.
@@ -285,13 +373,10 @@ class MoveGroupInterface():
 
     def setPlanningPipelineID(self, pipeline_id):
         """
-        Makes an asynchronous call to the setPlannerParams service through the set_planner_params client.
-        This parameterizes the planner, and sets its planning config and planning group.
+        Sets the planning pipeline ID of the motion plan. TODO
 
         Args:
-            planner_id (str) : TODO
-            group (str) : TODO
-            params (moveit_msgs/PlannerParams) : TODO
+            pipeline_id (str) : TODO
 
         """
         
@@ -303,58 +388,15 @@ class MoveGroupInterface():
             self.logger_.error("Attempt to set planning_pipeline_id to invalid type")
 
     def getPlanningPipelineID(self):
+        """
+        Gets the planning pipeline ID of the motion plan. TODO
+
+        Returns:
+            self.planning_pipeline_id_ (str) : TODO
+
+        """
+        
         return self.planning_pipeline_id_
-    
-    def getDefaultPlannerID(self):
-        # !!! Fix this. Possible in Ros2 but more annoying
-        default_planner_id = self.node_.get_parameter("move_group/default_planning_pipeline").get_parameter_value().string_value
-        return default_planner_id
-
-    def setPlannerId(self,n):
-        if isinstance(n, str):
-            self.planner_id_ = n
-        else:
-            self.logger_.error("Attempt to set planner_id to invalid type")
-    
-    def getPlannerId(self):
-        return self.planner_id_
-
-    def setCanLook(self, n):
-        if isinstance(n, bool):
-            self.can_look_ = n
-        else:
-            self.logger_.error("Attempt to set can_look to invalid type")
-    def getCanLook(self):
-        return self.can_look_
-    
-    def setLookAroundAttemps(self, n):
-        if isinstance(n, int):
-            if(n < 0):
-                self.logger_.error("Attempt to set look attempts negative. Set as positive instead")
-            self.look_around_attempts_ = abs(n)
-        else:
-            self.logger_.error("Attempt to set look_around_attempts to invalid type")
-
-    def getLookAroundAttemps(self):
-        return self.look_around_attempts_
-    
-    def setCanReplan(self, n):
-        if isinstance(n, bool):
-            self.can_replan_ = n
-        else:
-            self.logger_.error("Attempt to set can_replan to invalid type")
-
-    def getCanReplan(self):
-        return self.can_replan_
-    
-    def setReplanDelay(self, n):
-        if isinstance(n, int) or isinstance(n, float):
-            self.replan_delay_ = float(n)
-        else:
-            self.logger_.error("Attempt to set replan_delay to invalid type")
-
-    def getReplanDelay(self):
-        return self.replan_delay_
     
     def setReplanAttempts(self, n):
         if isinstance(n, int):
@@ -365,52 +407,14 @@ class MoveGroupInterface():
     def getReplanAttempt(self):
         return self.replan_attempts_
     
-    def setGoalJointTolerance(self, n):
+    def setReplanDelay(self, n):
         if isinstance(n, int) or isinstance(n, float):
-            self.goal_joint_tolerance_ = float(n)
+            self.replan_delay_ = float(n)
         else:
-            self.logger_.error("Attempt to set goal_joint_tolerance to invalid type")
+            self.logger_.error("Attempt to set replan_delay to invalid type")
 
-    def getGoalJointTolerance(self):
-        return self.goal_joint_tolerance_
-    
-    def setGoalPositionTolerance(self, n):
-        if isinstance(n, int) or isinstance(n, float):
-            self.goal_position_tolerance_ = float(n)
-        else:
-            self.logger_.error("Attempt to set goal_position_tolerance to invalid type")
-    def getGoalPositionTolerance(self):
-        return self.goal_position_tolerance_
-    
-    def setGoalOrientationolerance(self, n):
-        if isinstance(n, int) or isinstance(n, float):
-            self.goal_orientation_tolerance_ = float(n)
-        else:
-            self.logger_.error("Attempt to set goal_orientation_tolreance to invalid type")
-
-    def getGoalOrientationolerance(self):
-        return self.goal_orientation_tolerance_
-    
-    def setAllowedPlanningTime(self, n):
-        if isinstance(n, int) or isinstance(n, float):
-            if(float(n) > 0.0):
-                self.allowed_planning_time_ = float(n)
-            else:
-                self.logger_.error("Attempt to set allowed_planning_time to impossible time")
-        else:
-            self.logger_.error("Attempt to set allowed_planning_time to invalid type")
-
-    def getAllowedPlanningTime(self):
-        return self.allowed_planning_time_
-
-    def setNumPlanningAttemps(self, n):
-        if isinstance(n, int):
-            self.num_planning_attemps_ = n
-        else:
-            self.logger_.error("Attempt to set num_planning_attempts to invalid type")
-
-    def getNumPlanningAttemps(self):
-        return self.num_planning_attemps_
+    def getReplanDelay(self):
+        return self.replan_delay_
 
     def setStartState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
         
