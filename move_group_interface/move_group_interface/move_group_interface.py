@@ -134,7 +134,7 @@ class MoveGroupInterface():
 
         # SUBSCRIBERS
 
-        self.joint_state_sub_ = self.node_.create_subscription(JointState, self.robot_namespace_+"joint_states", self.joint_state_callback, 10)
+        self.joint_state_sub_ = self.node_.create_subscription(JointState, self.robot_namespace_+"joint_states", self.jointStateCallback, 10)
 
         # ACTION CLIENTS
 
@@ -651,7 +651,7 @@ class MoveGroupInterface():
 
     def clearPositionConstraints(self):
         self.position_constraints_ = []
-        
+
     
     """
 
@@ -659,28 +659,62 @@ class MoveGroupInterface():
 
     """
 
-    def jointsToRobotState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
+    async def addCollisionObject(self, shape, pose_stamped):
+        scene = await self.getPlanningScene()
         
-        RS = RobotState()
-        RS.joint_state = joint_values
-        if(not(mdof_joint_values is None)):
-            RS.multi_dof_joint_state = mdof_joint_values
-        if(not(attached_objects is None)):
-            RS.attached_collision_objects = attached_objects
-        if(not(is_diff is None)):
-            RS.is_diff = is_diff
-        return RS
+        obj = CollisionObject()
+        obj.header = pose_stamped.header
+        obj.pose = pose_stamped.pose
+        obj.primitives = [shape]
+        obj.primitive_poses = [Pose()]
 
-    def constructPlannerOptions(self, plan_only=True):
-        options = PlanningOptions()
-        options.plan_only = plan_only
-        options.look_around = self.can_look_
-        options.look_around_attempts = self.look_around_attempts_
-        options.replan = self.can_replan_
-        options.replan_attempts = self.replan_attempts_
-        options.replan_delay = self.replan_delay_
-        return options
+        scene.world.collision_objects.append(obj)
 
+        self.planning_scene_pub_.publish(scene)
+
+    def cleanUp(self):
+        """Clean up after planning"""
+        self.clearAllConstraints()
+        self.start_state_ = None
+
+    async def computeFK(self, joint_values, base_frame=None, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        req = GetPositionFK.Request()
+        if(base_frame is None):
+            base_frame = self.base_link_
+        req.header.frame_id = base_frame
+        
+        if(link_names is None):
+            link_names = [self.end_effector_link_]
+        req.fk_link_names = link_names
+
+        RS = self.jointsToRobotState(joint_values, mdof_joint_values, attached_objects, is_diff)
+        req.robot_state = RS
+
+        response = await self.compute_fk_service_.call_async(req)
+        poses = response.pose_stamped
+        names = response.fk_link_names
+        err = response.error_code
+        return poses, names, err
+    
+    async def computeIK(self, pose_stamped, link=None, start_guess=None, constraints=None):
+        # Does not support multiple link submissions
+        # Call ya own service ya bums
+        req = GetPositionIK.Request().ik_request
+        req.group_name = self.group_name_
+        if(start_guess is None):
+            start_guess = self.jointsToRobotState(self.current_state_)
+        req.robot_state = start_guess
+        if(not(constraints is None)):
+            req.constraints = constraints
+        if(link is None):
+            link = self.end_effector_link_
+        req.ik_link_name = link
+        req.pose_stamped = pose_stamped
+        response = await self.compute_ik_service_.call_async(GetPositionIK.Request(ik_request=req))
+        sol = response.solution
+        err = response.error_code
+        return sol, err
+    
     def constructMotionPlanRequest(self):
         request = MotionPlanRequest()
         request.group_name = self.group_name_
@@ -701,6 +735,62 @@ class MoveGroupInterface():
         request.goal_constraints = [self.constraints_]
         return request
     
+    def constructPlannerOptions(self, plan_only=True):
+        options = PlanningOptions()
+        options.plan_only = plan_only
+        options.look_around = self.can_look_
+        options.look_around_attempts = self.look_around_attempts_
+        options.replan = self.can_replan_
+        options.replan_attempts = self.replan_attempts_
+        options.replan_delay = self.replan_delay_
+        return options
+    
+    async def executeTrajectory(self, trajectory):
+        goal = ExecuteTrajectory.Goal()
+        goal.trajectory = trajectory
+        goal_handle = await self.execute_action_client_.send_goal_async(goal)
+
+        if not goal_handle.accepted:
+            self.logger_.info("Goal not accepted")
+            return
+        self.logger_.info("Goal accepted.")
+
+        res = await goal_handle.get_result_async()
+        result = res.result
+        status = res.status
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self.logger_.info("Goal succeeded!")
+        else:
+            self.logger_.info('Goal failed with status: {0}'.format(status))
+        return result, status
+    
+    async def getPlanningScene(self, components=PlanningSceneComponents()):
+        planning_scene = await self.planning_scene_service_.call_async(GetPlanningScene.Request(components=components))
+        return planning_scene.scene
+    
+    def jointStateCallback(self, msg):
+        self.current_state_ = JointState()
+        self.current_state_.header = msg.header
+
+        for i in range(len(msg.name)):
+            for j in self.joint_names_:
+                if(msg.name[i] == j):
+                    self.current_state_.name.append(msg.name[i])
+                    self.current_state_.position.append(msg.position[i])
+                    self.current_state_.velocity.append(msg.velocity[i])
+                    self.current_state_.effort.append(msg.effort[i])
+
+    def jointsToRobotState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        
+        RS = RobotState()
+        RS.joint_state = joint_values
+        if(not(mdof_joint_values is None)):
+            RS.multi_dof_joint_state = mdof_joint_values
+        if(not(attached_objects is None)):
+            RS.attached_collision_objects = attached_objects
+        if(not(is_diff is None)):
+            RS.is_diff = is_diff
+        return RS
 
     async def makeMotionPlanRequest(self, plan_only=True, start_state = None, eef_pose_stamped=None, clean=True):
         if(not(eef_pose_stamped is None)):
@@ -734,94 +824,3 @@ class MoveGroupInterface():
         if(clean):
             self.cleanUp()
         return result, status
-    
-    async def executeTrajectory(self, trajectory):
-        goal = ExecuteTrajectory.Goal()
-        goal.trajectory = trajectory
-        goal_handle = await self.execute_action_client_.send_goal_async(goal)
-
-        if not goal_handle.accepted:
-            self.logger_.info("Goal not accepted")
-            return
-        self.logger_.info("Goal accepted.")
-
-        res = await goal_handle.get_result_async()
-        result = res.result
-        status = res.status
-        if status == GoalStatus.STATUS_SUCCEEDED:
-            self.logger_.info("Goal succeeded!")
-        else:
-            self.logger_.info('Goal failed with status: {0}'.format(status))
-        return result, status
-    
-    def joint_state_callback(self, msg):
-        self.current_state_ = JointState()
-        self.current_state_.header = msg.header
-
-        for i in range(len(msg.name)):
-            for j in self.joint_names_:
-                if(msg.name[i] == j):
-                    self.current_state_.name.append(msg.name[i])
-                    self.current_state_.position.append(msg.position[i])
-                    self.current_state_.velocity.append(msg.velocity[i])
-                    self.current_state_.effort.append(msg.effort[i])
-    
-    async def computeIK(self, pose_stamped, link=None, start_guess=None, constraints=None):
-        # Does not support multiple link submissions
-        # Call ya own service ya bums
-        req = GetPositionIK.Request().ik_request
-        req.group_name = self.group_name_
-        if(start_guess is None):
-            start_guess = self.jointsToRobotState(self.current_state_)
-        req.robot_state = start_guess
-        if(not(constraints is None)):
-            req.constraints = constraints
-        if(link is None):
-            link = self.end_effector_link_
-        req.ik_link_name = link
-        req.pose_stamped = pose_stamped
-        response = await self.compute_ik_service_.call_async(GetPositionIK.Request(ik_request=req))
-        sol = response.solution
-        err = response.error_code
-        return sol, err
-    
-    async def computeFK(self, joint_values, base_frame=None, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
-        req = GetPositionFK.Request()
-        if(base_frame is None):
-            base_frame = self.base_link_
-        req.header.frame_id = base_frame
-        
-        if(link_names is None):
-            link_names = [self.end_effector_link_]
-        req.fk_link_names = link_names
-
-        RS = self.jointsToRobotState(joint_values, mdof_joint_values, attached_objects, is_diff)
-        req.robot_state = RS
-
-        response = await self.compute_fk_service_.call_async(req)
-        poses = response.pose_stamped
-        names = response.fk_link_names
-        err = response.error_code
-        return poses, names, err
-
-    async def getPlanningScene(self, components=PlanningSceneComponents()):
-        planning_scene = await self.planning_scene_service_.call_async(GetPlanningScene.Request(components=components))
-        return planning_scene.scene
-
-    async def addCollisionObject(self, shape, pose_stamped):
-        scene = await self.getPlanningScene()
-        
-        obj = CollisionObject()
-        obj.header = pose_stamped.header
-        obj.pose = pose_stamped.pose
-        obj.primitives = [shape]
-        obj.primitive_poses = [Pose()]
-
-        scene.world.collision_objects.append(obj)
-
-        self.planning_scene_pub_.publish(scene)
-
-    def cleanUp(self):
-        """Clean up after planning"""
-        self.clearAllConstraints()
-        self.start_state_ = None
