@@ -49,17 +49,17 @@ class MoveGroupInterface():
         jointstates (sensor_msgs/msg/JointState) - TODO
 
     SERVICE CLIENTS:
-        query_planner_interface (moveit_msgs/srv/QueryPlannerInterfaces) - TODO
-        get_planner_params (moveit_msgs/srv/GetPlannerParams) - TODO
-        set_planner_params (moveit_msgs/srv/SetPlannerParams) - TODO
         compute_cartesian_path (moveit_msgs/srv/GetCartesianPath) - TODO
-        get_planning_scene (moveit_msgs/srv/GetPlanningScene) - TODO
-        compute_ik (moveit_msgs/srv/GetPositionIK) - TODO
         compute_fk (moveit_msgs/srv/GetPositionFK) - TODO
+        compute_ik (moveit_msgs/srv/GetPositionIK) - TODO
+        get_planner_params (moveit_msgs/srv/GetPlannerParams) - TODO
+        get_planning_scene (moveit_msgs/srv/GetPlanningScene) - TODO
+        query_planner_interface (moveit_msgs/srv/QueryPlannerInterfaces) - TODO
+        set_planner_params (moveit_msgs/srv/SetPlannerParams) - TODO
 
     ACTION CLIENTS:
-        move_action (moveit_msgs/action/MoveGroup) - TODO
         execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - TODO
+        move_action (moveit_msgs/action/MoveGroup) - TODO
 
     """
 
@@ -128,45 +128,54 @@ class MoveGroupInterface():
         self.joint_constraints_ = []
         self.visibility_constraints_ = [] # Add funcitonality for increasd quality submisison -- doesnt exist rn
 
-        self.joint_state_sub_ = self.node_.create_subscription(JointState, self.robot_namespace_+"joint_states", self.joint_state_callback, 10)
+        # PUBLLISHERS
 
         self.planning_scene_pub_ = self.node_.create_publisher(PlanningScene, self.namespace_+"planning_scene", 10)
+
+        # SUBSCRIBERS
+
+        self.joint_state_sub_ = self.node_.create_subscription(JointState, self.robot_namespace_+"joint_states", self.joint_state_callback, 10)
+
+        # ACTION CLIENTS
+
+        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "execute_trajectory", callback_group=self.cb_group_)
+        if not self.execute_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for execute_trajectory action to become available")
 
         self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "move_action", callback_group=self.cb_group_)
         if not self.move_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for move_group action to become available")
 
-        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "execute_trajectory", callback_group=self.cb_group_)
-        if not self.execute_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
-            raise RuntimeError("Timeout waiting for execute_trajectory action to become available")
-        
-        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "query_planner_interface", callback_group=self.cb_group_)
-        if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
-            raise RuntimeError("Timeout waiting for query_planner_interface service")
-
-        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "get_planner_params", callback_group=self.cb_group_)
-        if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
-            raise RuntimeError("Timeout waiting for get_planner_params service")
-
-        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "set_planner_params", callback_group=self.cb_group_)
-        if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
-            raise RuntimeError("Timeout waiting for set_planner_params service")
+        # SERVICE CLIENTS
 
         self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "compute_cartesian_path", callback_group=self.cb_group_)
         if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for compute_cartesian_path service")
         
-        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"get_planning_scene", callback_group=self.cb_group_)
-        if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
-            raise RuntimeError("Timeout waiting for get_planning_scene service")
+        self.compute_fk_service_ = self.node_.create_client(GetPositionFK, self.namespace_+"compute_fk", callback_group=self.cb_group_)
+        if not self.compute_fk_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for compute_fk service")
         
         self.compute_ik_service_ = self.node_.create_client(GetPositionIK, self.namespace_+"compute_ik", callback_group=self.cb_group_)
         if not self.compute_ik_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
             raise RuntimeError("Timeout waiting for compute_ik service")
+        
+        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "get_planner_params", callback_group=self.cb_group_)
+        if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for get_planner_params service")
+        
+        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"get_planning_scene", callback_group=self.cb_group_)
+        if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for get_planning_scene service")
 
-        self.compute_fk_service_ = self.node_.create_client(GetPositionFK, self.namespace_+"compute_fk", callback_group=self.cb_group_)
-        if not self.compute_fk_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
-            raise RuntimeError("Timeout waiting for compute_fk service")
+        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "query_planner_interface", callback_group=self.cb_group_)
+        if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for query_planner_interface service")
+
+        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "set_planner_params", callback_group=self.cb_group_)
+        if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+            raise RuntimeError("Timeout waiting for set_planner_params service")
+
 
     """
 
@@ -180,7 +189,7 @@ class MoveGroupInterface():
         Set the maximum velocity scaling of the motion plan, defaulting to 0.1.
 
         Args:
-             : TODO
+            n (float / int) : Maximum velocity scaling factor ranging from 0.01 to 1.
 
         """
         if isinstance(n, float) or isinstance(n, int):
@@ -196,9 +205,23 @@ class MoveGroupInterface():
             self.logger_.info("Attempt to set max_velocity_scaling_factor to invalid type")
     
     def getMaxVelocityScaling(self):
+        """
+        Get the maximum velocity scaling of the motion plan.
+
+        Returns:
+            self.max_velocity_scaling_factor (float) : Maximum velocity scaling factor.
+
+        """
         return self.max_velocity_scaling_factor_
     
     def setMaxAccelerationScaling(self, n):
+        """
+        Set the maximum acceleration scaling of the motion plan, defaulting to 0.1.
+
+        Args:
+            n (float / int) : Maximum acceleration scaling factor ranging from 0.01 to 1.
+
+        """
         if isinstance(n, float) or isinstance(n, int):
             if(n >= 0.01):
                 if(n > 1.0):
@@ -212,10 +235,27 @@ class MoveGroupInterface():
             self.logger_.info("Attempt to set max_acceleration_scaling_factor to invalid type")
     
     def getMaxAccelerationScaling(self):
+        """
+        Get the maximum acceleration scaling of the motion plan.
+
+        Returns:
+            self.max_acceleration_scaling_factor (float) : Maximum acceleration scaling factor.
+
+        """
         return self.max_acceleration_scaling_factor_
     
 
     def setPlannerParams(self, planner_id, group, params, replace=False):
+        """
+        Makes an asynchronous call to the setPlannerParams service through the set_planner_params client.
+        This parameterizes the planner, and sets its planning config and planning group.
+
+        Args:
+            planner_id (str) : TODO
+            group (str) : TODO
+            params (moveit_msgs/PlannerParams) : TODO
+
+        """
         request = SetPlannerParams()
         request.planner_config = planner_id
         request.group = group
@@ -224,6 +264,18 @@ class MoveGroupInterface():
         self.set_params_service_.call_async(request)
     
     async def getPlannerParams(self, planner_id, group):
+        """
+        Makes an asynchronous call to the getPlannerParams service through the get_planner_params client.
+        This retrieves the parametrization of the planner corresponding to a planner config and planning group.
+
+        Args:
+            planner_id (str) : TODO
+            group (str) : TODO
+
+        Returns:
+            response (moveit_msgs/PlannerParams) : TODO
+
+        """
         request = GetPlannerParams()
         request.planner_config = planner_id
         request.group = group
@@ -232,6 +284,17 @@ class MoveGroupInterface():
         return response
 
     def setPlanningPipelineID(self, pipeline_id):
+        """
+        Makes an asynchronous call to the setPlannerParams service through the set_planner_params client.
+        This parameterizes the planner, and sets its planning config and planning group.
+
+        Args:
+            planner_id (str) : TODO
+            group (str) : TODO
+            params (moveit_msgs/PlannerParams) : TODO
+
+        """
+        
         if isinstance(pipeline_id, str):
             if(pipeline_id != self.planning_pipeline_id_):
                 self.planning_pipeline_id_ = pipeline_id
