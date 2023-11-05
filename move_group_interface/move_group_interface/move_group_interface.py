@@ -12,8 +12,25 @@ from sensor_msgs.msg import JointState
 from action_msgs.msg import GoalStatus
 
 class RobotModel():
+    """
+    Model of an open-chain robot.
 
+    """
+    
     def __init__(self, group_name, joint_names, default_end_effector=None, default_base_link=None, robot_namespace="", desc="robot_description"):
+        """
+        Initialize robot model.
+
+        Args:
+            group_name (str) : TODO
+            joint_names (str[]) : TODO
+            default_end _effector (str) : TODO
+            default_base_link (str) : TODO
+            robot_namespace (str) : TODO
+            robot_description (str) : TODO
+
+        """
+
         self.group_name = group_name
         self.joint_names = joint_names
         self.default_end_effector = default_end_effector
@@ -22,18 +39,54 @@ class RobotModel():
         self.robot_description = desc
 
 class MoveGroupInterface():
+    """
+    TODO
+
+    PUBLISHES:
+        planning_scene (moveit_msgs/msg/PlanningScene) - TODO
+
+    SUBSCRIBES:
+        jointstates (sensor_msgs/msg/JointState) - TODO
+
+    SERVICE CLIENTS:
+        query_planner_interface (moveit_msgs/srv/QueryPlannerInterfaces) - TODO
+        get_planner_params (moveit_msgs/srv/GetPlannerParams) - TODO
+        set_planner_params (moveit_msgs/srv/SetPlannerParams) - TODO
+        compute_cartesian_path (moveit_msgs/srv/GetCartesianPath) - TODO
+        get_planning_scene (moveit_msgs/srv/GetPlanningScene) - TODO
+        compute_ik (moveit_msgs/srv/GetPositionIK) - TODO
+        compute_fk (moveit_msgs/srv/GetPositionFK) - TODO
+
+    ACTION CLIENTS:
+        move_action (moveit_msgs/action/MoveGroup) - TODO
+        execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - TODO
+
+    """
 
     def __init__(self, node, robotModel, tf_buffer=None, namespace="", wait_for_servers=3.0):
+
+        """
+        TODO
+
+        Args:
+            node (rclpy/Node) : TODO
+            robotModel (RobotModel) : TODO
+            tf_buffer (TODO) : TODO
+            namespace (str) : TODO
+            wait_for_servers (float) : TODO
+
+        """
+
         self.group_name_ = robotModel.group_name
-        self.robot_description_ = robotModel.robot_description #unused
         self.joint_names_ = robotModel.joint_names
         self.end_effector_link_ = robotModel.default_end_effector
         self.base_link_ = robotModel.default_base_link
         self.robot_namespace_ = robotModel.robot_namespace
+        self.robot_description_ = robotModel.robot_description #unused
 
-        self.namespace_ = namespace #Nice option but also unused 
         self.node_ = node
         self.tf_buffer_ = tf_buffer # Unsued? Why is it in the c++ version?
+        self.namespace_ = namespace #Nice option but also unused 
         self.wait_for_servers_ = wait_for_servers
         
         self.logger_ = self.node_.get_logger()
@@ -123,6 +176,13 @@ class MoveGroupInterface():
     """
 
     def setMaxVelocityScaling(self, n):
+        """
+        Set the maximum velocity scaling of the motion plan, defaulting to 0.1.
+
+        Args:
+             : TODO
+
+        """
         if isinstance(n, float) or isinstance(n, int):
             if(n >= 0.01):
                 if(n > 1.0):
