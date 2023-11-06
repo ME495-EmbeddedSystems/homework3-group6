@@ -48,7 +48,8 @@ class move_group_test(Node):
 
         self.joint_start.position = [0.0, -1.0, 0.0, -2.0, 0.0, 1.57, 1.0]
 
-        self.API.setStartState(self.joint_start)
+        # It is possible to set a different start state for planning!
+        # self.API.setStartState(self.joint_start)
         self.traj = None
 
         self.place_box_service = self.create_service(Empty, "place_box", self.place_box_callback)
