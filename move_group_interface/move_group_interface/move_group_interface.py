@@ -1,42 +1,47 @@
+import dataclasses
 import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
-
-from moveit_msgs.msg import PlannerParams, PlanningScene, MotionPlanRequest, WorkspaceParameters, Constraints, RobotState, PositionConstraint, OrientationConstraint, JointConstraint, BoundingVolume, PlanningOptions, RobotTrajectory, PlanningSceneComponents, CollisionObject, PositionIKRequest, MotionSequenceRequest, MotionSequenceItem
-from moveit_msgs.srv import GetPlannerParams, SetPlannerParams, QueryPlannerInterfaces, GetCartesianPath, GetPlanningScene, GetPositionIK, GetPositionFK
-from moveit_msgs.action import MoveGroup, ExecuteTrajectory, MoveGroupSequence
-from geometry_msgs.msg import PoseStamped, Pose
-from shape_msgs.msg import SolidPrimitive
-from sensor_msgs.msg import JointState
 from action_msgs.msg import GoalStatus
+from geometry_msgs.msg import Pose, PoseStamped
+from moveit_msgs.action import ExecuteTrajectory, MoveGroup, MoveGroupSequence
+from moveit_msgs.msg import (BoundingVolume, CollisionObject, Constraints,
+                             JointConstraint, MotionPlanRequest,
+                             MotionSequenceItem, MotionSequenceRequest,
+                             OrientationConstraint, PlannerParams,
+                             PlanningOptions, PlanningScene,
+                             PlanningSceneComponents, PositionConstraint,
+                             PositionIKRequest, RobotState, RobotTrajectory,
+                             WorkspaceParameters)
+from moveit_msgs.srv import (GetCartesianPath, GetPlannerParams,
+                             GetPlanningScene, GetPositionFK, GetPositionIK,
+                             QueryPlannerInterfaces, SetPlannerParams)
+from rclpy.action import ActionClient
+from rclpy.callback_groups import (MutuallyExclusiveCallbackGroup,
+                                   ReentrantCallbackGroup)
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from shape_msgs.msg import SolidPrimitive
 
+@dataclasses.dataclass
 class RobotModel():
     """
     Model of an open-chain robot.
 
+    necessary data of the robot for move group to plan with.
+
+    group_name (str) : The name of the move_group contantaing the joints
+    joint_names (str[]) : The list of joints in the move_group
+    default_end _effector (str) : A default end effector link (optional)
+    default_base_link (str) : A default base link (optional)
+    robot_namespace (str) : Robot namespace affecting /joint_states publishing (optional)
+    robot_description (str) : A robot description topic (optional, unused)
     """
-    
-    def __init__(self, group_name, joint_names, default_end_effector=None, default_base_link=None, robot_namespace="", desc="robot_description"):
-        """
-        Initialize robot model.
-
-        Args:
-            group_name (str) : The name of the move_group contantaing the joints
-            joint_names (str[]) : The list of joints in the move_group
-            default_end _effector (str) : A default end effector link (optional)
-            default_base_link (str) : A default base link (optional)
-            robot_namespace (str) : Robot namespace affecting /joint_states publishing (optional)
-            robot_description (str) : A robot description topic (optional, unused)
-
-        """
-
-        self.group_name = group_name
-        self.joint_names = joint_names
-        self.default_end_effector = default_end_effector
-        self.default_base_link = default_base_link
-        self.robot_namespace = robot_namespace
-        self.robot_description = desc
+    group_name : str
+    joint_names : list[str]
+    # Note: Original code below two are optional, I think they should be required. 
+    default_end_effector : str
+    default_base_link:str 
+    robot_namespace:str = ""
+    robot_description:str = "robot_description"
 
 class MoveGroupInterface():
     """
