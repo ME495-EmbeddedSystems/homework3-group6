@@ -43,11 +43,9 @@ Here is an example of the param file for the Panda Arm:
 ```yaml
 /moveit_api:
   ros__parameters:
-    namespace: ''
     base_frame_id: 'panda_link0'
     end_effector_link: 'panda_link8'
     group_name: 'panda_manipulator'
-    use_joint_constraints: False
 ```
 
 <br>
@@ -109,3 +107,6 @@ __Example Usage:__
 ```
 ros2 service call /place_box moveit_interfaces/srv/PlaceBox "{x: 1.0, y: 1.0, z: 1.0, x_dim: 0.5, y_dim: 0.5, z_dim: 0.5}"
 ```
+
+### Demo of calling the API from the command line
+   https://github.com/ME495-EmbeddedSystems/homework3-group6/assets/122302059/466693e7-79d3-4b40-aa40-a86d95b886a5

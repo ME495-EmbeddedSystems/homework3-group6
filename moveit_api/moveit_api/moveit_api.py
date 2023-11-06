@@ -152,9 +152,6 @@ class MoveitAPI(Node):
         pos_ik_req.pose_stamped.pose.orientation.w = pose.orientation.w
         pos_ik_req.timeout.sec = 5
 
-        if self.namespace == 'px100':
-            pos_ik_req.ik_link_name = 'px100/ee_arm_link'
-
         get_pos_ik_req = GetPositionIK.Request()
         get_pos_ik_req.ik_request = pos_ik_req
 
