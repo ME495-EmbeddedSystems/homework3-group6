@@ -184,6 +184,12 @@ class MoveGroupInterface():
     """
 
     def setAllowedPlanningTime(self, n):
+        """
+        Sets the maximum time the motion planner is allowed to plan for.
+
+        Args:
+            n (float) : A positive amount of time that the planner is allowed to plan for (seconds).
+        """
         if isinstance(n, int) or isinstance(n, float):
             if(float(n) > 0.0):
                 self.allowed_planning_time_ = float(n)
@@ -193,54 +199,127 @@ class MoveGroupInterface():
             self.logger_.error("Attempt to set allowed_planning_time to invalid type")
 
     def getAllowedPlanningTime(self):
+        """
+        Gets the maximum time the motion planner is allowed to plan for.
+
+        Returns:
+            allowed_planning_time_ (float) : A positive amount of time that the planner is allowed to plan for (seconds).
+        """
+
         return self.allowed_planning_time_
 
     def setCanLook(self, n):
+        """
+        Sets the flag which allows the action of planning and executing to look around if it seems that not enough information is available about the environment.
+
+        Args:
+            n (bool) : True, if it can look around.
+        """
         if isinstance(n, bool):
             self.can_look_ = n
         else:
             self.logger_.error("Attempt to set can_look to invalid type")
     def getCanLook(self):
+        """
+        Gets the flag which allows the action of planning and executing to look around if it seems that not enough information is available about the environment.
+
+        Returns:
+            can_look_ (bool) : True, if it can look around.
+        """
         return self.can_look_
     
     def setCanReplan(self, n):
+        """
+        Sets the flag which allows the planner to replan, in case the plan becomes invalidated during execution.
+
+        Args:
+            n (bool) : True, if it can replan.
+        """
         if isinstance(n, bool):
             self.can_replan_ = n
         else:
             self.logger_.error("Attempt to set can_replan to invalid type")
 
     def getCanReplan(self):
+        """
+        Gets the flag which allows the planner to replan, in case the plan becomes invalidated during execution.
+
+        Returns:
+            n (bool) : True, if it can replan.
+        """
         return self.can_replan_
     
     def getDefaultPlannerID(self):
+        """
+        Gets the default planning pipeline's id.
+
+        Returns:
+            deafult_planner_id (str) : Default planner's id.
+        """
         # !!! Fix this. Possible in Ros2 but more annoying
         default_planner_id = self.node_.get_parameter("move_group/default_planning_pipeline").get_parameter_value().string_value
         return default_planner_id
     
     def setGoalJointTolerance(self, n):
+        """
+        Sets the tolerance in joint angles for the robot to reach the goal.
+
+        Args:
+            n (int / float) : Joint angle tolerance (radians).
+        """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_joint_tolerance_ = float(n)
         else:
             self.logger_.error("Attempt to set goal_joint_tolerance to invalid type")
 
     def getGoalJointTolerance(self):
+        """
+        Gets the tolerance in joint angles for the robot to reach the goal.
+
+        Returns:
+            goal_joint_tolerance_ (int / float) : Joint angle tolerance (radians).
+        """
         return self.goal_joint_tolerance_
     
     def setGoalOrientationolerance(self, n):
+        """
+        Sets the tolerance in orientation for the robot to reach the goal.
+
+        Args:
+            n (int / float) : Orientation tolerance (radians). 
+        """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_orientation_tolerance_ = float(n)
         else:
             self.logger_.error("Attempt to set goal_orientation_tolreance to invalid type")
 
     def getGoalOrientationolerance(self):
+        """
+        Gets the tolerance in orientation for the robot to reach the goal.
+
+        Returns:
+            goal_orientation_tolerance_ (int / float) : Orientation tolerance (radians).
+        """
         return self.goal_orientation_tolerance_
     
     def setGoalPositionTolerance(self, n):
+        """
+        Sets the tolerance in position for the robot to reach the goal.
+
+        Args:
+            n (int / float) : Position tolerance (m). 
+        """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_position_tolerance_ = float(n)
         else:
             self.logger_.error("Attempt to set goal_position_tolerance to invalid type")
     def getGoalPositionTolerance(self):
+        """
+        Gets the tolerance in position for the robot to reach the goal.
+
+        Returns:
+            goal_position_tolerance_ (int / float) : Position tolerance (m).
+        """
         return self.goal_position_tolerance_
     
     def setLookAroundAttemps(self, n):
@@ -256,7 +335,7 @@ class MoveGroupInterface():
     
     def setMaxAccelerationScaling(self, n):
         """
-        Set the maximum acceleration scaling of the motion plan, defaulting to 0.1.
+        Set the maximum acceleration scaling of the motion plan.
 
         Args:
             n (float / int) : Maximum acceleration scaling factor ranging from 0.01 to 1.
@@ -279,14 +358,14 @@ class MoveGroupInterface():
         Get the maximum acceleration scaling of the motion plan.
 
         Returns:
-            self.max_acceleration_scaling_factor (float) : Maximum acceleration scaling factor.
+            max_acceleration_scaling_factor (float) : Maximum acceleration scaling factor.
 
         """
         return self.max_acceleration_scaling_factor_
 
     def setMaxVelocityScaling(self, n):
         """
-        Set the maximum velocity scaling of the motion plan, defaulting to 0.1.
+        Set the maximum velocity scaling of the motion plan.
 
         Args:
             n (float / int) : Maximum velocity scaling factor ranging from 0.01 to 1.
@@ -309,38 +388,66 @@ class MoveGroupInterface():
         Get the maximum velocity scaling of the motion plan.
 
         Returns:
-            self.max_velocity_scaling_factor (float) : Maximum velocity scaling factor.
+            max_velocity_scaling_factor (float) : Maximum velocity scaling factor.
 
         """
         return self.max_velocity_scaling_factor_
     
     def setNumPlanningAttemps(self, n):
+        """
+        Set the number of times the motion plan is computed. The shortest solution will be reported.
+
+        Args:
+            n (int) : Number of times the motion plan is computed. Should be at least one.
+
+        """
         if isinstance(n, int):
             self.num_planning_attemps_ = n
         else:
             self.logger_.error("Attempt to set num_planning_attempts to invalid type")
 
     def getNumPlanningAttemps(self):
+        """
+        Get the number of times the motion plan is computed. The shortest solution will be reported.
+
+        Returns:
+            num_planning_attempts_ (int) : Number of times the motion plan is computed.
+
+        """
         return self.num_planning_attemps_
     
     def setPlannerId(self,n):
+        """
+        Set the name of the planning algorithm to use. If not specified, the default planner of the configured planning pipeline is used.
+
+        Args:
+            n (str) : Name of the planning algorithm.
+
+        """
         if isinstance(n, str):
             self.planner_id_ = n
         else:
             self.logger_.error("Attempt to set planner_id to invalid type")
     
     def getPlannerId(self):
+        """
+        Get the name of the planning algorithm to use. If not specified, the default planner of the configured planning pipeline is used.
+
+        Returns:
+            planner_id_(str) : Name of the planning algorithm.
+
+        """
         return self.planner_id_
     
     def setPlannerParams(self, planner_id, group, params, replace=False):
         """
         Makes an asynchronous call to the setPlannerParams service through the set_planner_params client.
-        This parameterizes the planner, and sets its planning config and planning group.
+        This parameterizes the planner, and sets its config and group.
 
         Args:
-            planner_id (str) : TODO
-            group (str) : TODO
-            params (moveit_msgs/PlannerParams) : TODO
+            planner_id (str) : Planning algorithm to use.
+            group (str) : Group of joints on which this planner is operating.
+            params (moveit_msgs/PlannerParams) : Parameters as key-value pairs.
 
         """
         request = SetPlannerParams()
@@ -356,11 +463,11 @@ class MoveGroupInterface():
         This retrieves the parametrization of the planner corresponding to a planner config and planning group.
 
         Args:
-            planner_id (str) : TODO
-            group (str) : TODO
+            planner_id (str) : Planning algorithm to use.
+            group (str) : Group of joints on which this planner is operating.
 
         Returns:
-            response (moveit_msgs/PlannerParams) : TODO
+            response (moveit_msgs/PlannerParams) : Parameters as key-value pairs.
 
         """
         request = GetPlannerParams()
@@ -372,10 +479,10 @@ class MoveGroupInterface():
 
     def setPlanningPipelineID(self, pipeline_id):
         """
-        Sets the planning pipeline ID of the motion plan. TODO
+        Set the name of the planning pipeline to use. If not specified, the configured planning pipeline is used.
 
         Args:
-            pipeline_id (str) : TODO
+            pipeline_id (str) : Name of planning pipeline.
 
         """
         
@@ -388,38 +495,91 @@ class MoveGroupInterface():
 
     def getPlanningPipelineID(self):
         """
-        Gets the planning pipeline ID of the motion plan. TODO
+        Get the name of the planning pipeline to use. If not specified, the configured planning pipeline is used.
 
         Returns:
-            self.planning_pipeline_id_ (str) : TODO
+            planning_pipeline_id_ (str) : Name of planning pipeline.
 
         """
         
         return self.planning_pipeline_id_
     
     def setReplanAttempts(self, n):
+        """
+        Sets the maximum number of replan attempts, in case the plan becomes invalidated during execution.
+
+        Args:
+            n (int) : Maximum number of replan attempts.
+
+        """
         if isinstance(n, int):
             self.replan_attempts_ = n
         else:
             self.logger_.error("Attempt to set replan_attempts to invalid type")
 
     def getReplanAttempt(self):
+        """
+        Gets the maximum number of replan attempts, in case the plan becomes invalidated during execution.
+
+        Returns:
+            replan_attempts_ (int) : Maximum number of replan attempts.
+
+        """
+
         return self.replan_attempts_
     
     def setReplanDelay(self, n):
+        """
+        Sets the amount of time to wait between replanning attempts.
+
+        Args:
+            n (float) : Time between replanning events (seconds).
+
+        """
         if isinstance(n, int) or isinstance(n, float):
             self.replan_delay_ = float(n)
         else:
             self.logger_.error("Attempt to set replan_delay to invalid type")
 
     def getReplanDelay(self):
+        """
+        Gets the amount of time to wait between replanning attempts.
+
+        Returns:
+            replan_delay_ (float) : Time between replanning events (seconds).
+
+        """
         return self.replan_delay_
 
     def setStartState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        """
+        Sets the robot's start state in the motion plan.
+
+        Args:
+            joint_values (sensor_msgs/JointState) : Starting single-dof joint states of the robot.
+            mdof_joint_values (sensor_msgs/MultiDOFJointState) : Starting multi-dof joint states of the robot.
+            attached_objects (moveit_msgs/AttachedCollisionObject[]) : Attached collision objects.
+            is_diff (bool) : Flag indicating whether this scene is to be interpreted as a diff with respect to some other scene.
+
+        """
         
         self.start_state_ = self.jointsToRobotState(joint_values, mdof_joint_values, attached_objects, is_diff)
 
     def setWorkspaceParamaters(self, minx, maxx, miny, maxy, minz, maxz, frame=None):
+        """
+        Sets the cuboidal workspace within which the robot is allowed to move.
+
+        Args:
+            minx (float) : lower x bound of workspace.
+            maxx (float) : higher x bound of workspace.
+            miny (float) : lower y bound of workspace.
+            maxy (float) : higher y bound of workspace.
+            minz (float) : lower z bound of workspace.
+            maxz (float) : higher z bound of workspace.
+            frame (str) : frame in which workspace is defined. Defaults to base_link_.
+
+        """
+
         if((isinstance(minx, int) or isinstance(minx, float) ) and
            (isinstance(miny, int) or isinstance(miny, float) ) and
            (isinstance(minz, int) or isinstance(minz, float) ) and
