@@ -463,7 +463,7 @@ class MoveGroupInterface():
 
         self.set_params_service_.call_async(request)
     
-    async def getPlannerParams(self, planner_id:str, group;str)->GetPlannerParams.Response:
+    async def getPlannerParams(self, planner_id:str, group:str)->GetPlannerParams.Response:
         """
         Makes an asynchronous call to the getPlannerParams service through the get_planner_params client.
         This retrieves the parametrization of the planner corresponding to a planner config and planning group.
