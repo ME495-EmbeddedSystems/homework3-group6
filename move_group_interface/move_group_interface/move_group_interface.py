@@ -11,7 +11,7 @@ from moveit_msgs.msg import (BoundingVolume, CollisionObject, Constraints,
                              PlanningOptions, PlanningScene,
                              PlanningSceneComponents, PositionConstraint,
                              PositionIKRequest, RobotState, RobotTrajectory,
-                             WorkspaceParameters , AttachedCollisionObject)
+                             WorkspaceParameters , AttachedCollisionObject,MoveItErrorCodes)
 from moveit_msgs.srv import (GetCartesianPath, GetPlannerParams,
                              GetPlanningScene, GetPositionFK, GetPositionIK,
                              QueryPlannerInterfaces, SetPlannerParams)
@@ -625,7 +625,7 @@ class MoveGroupInterface():
 
     # Joint Constraints
 
-    def addJointConstraint(self, joint_name, position, tol_a=None, tol_b=None, weight=1.0):
+    def addJointConstraint(self, joint_name:str, position:float, tol_a=None, tol_b=None, weight=1.0):
         """
         Adds a constraint on the position of a joint within a certain bound, to the motion planner.
 
@@ -686,7 +686,7 @@ class MoveGroupInterface():
             
             self.addJointConstraint(joint_states.name[i], joint_states.position[i], tol_a=tol_a, tol_b=tol_b, weight=weight)
 
-    async def addJointConstraintFromPose(self, pose_stamped, link=None, start_guess=None, constraints=None, tol_a=None, tol_b=None, weight=1.0):
+    async def addJointConstraintFromPose(self, pose_stamped:PoseStamped, link:Optional[str]=None, start_guess:Optional[RobotState]=None, constraints:Optional[Constraints]=None, tol_a=None, tol_b=None, weight=1.0):
         """
         Adds a constraint on the position of multiple joints within certain bounds to the motion planner, given the pose of the end effector when all joints are at the mean position.
 
@@ -754,7 +754,7 @@ class MoveGroupInterface():
 
     # Orientation Constraints
     
-    def addOrientationConstraint(self, pose_stamped, link=None, tolerance=None, weight=1.0):
+    def addOrientationConstraint(self, pose_stamped:PoseStamped, link=None, tolerance=None, weight=1.0):
         """
         Adds an equality constraint on the orientation of a link to the motion planner, given the desired orientation of the link.
 
@@ -793,7 +793,7 @@ class MoveGroupInterface():
 
     # Pose Constraints
 
-    def addPoseConstraint(self, pose_stamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
+    def addPoseConstraint(self, pose_stamped:PoseStamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
         """
         Adds an equality constraint on the pose of a link to the motion planner, given the desired pose of the link.
 
@@ -807,7 +807,7 @@ class MoveGroupInterface():
         self.addOrientationConstraint(pose_stamped, link=link, tolerance=ang_tol, weight=weight)
         self.addPositionConstraint(pose_stamped, link=link, tolerance=lin_tol, weight=weight)
 
-    def addPoseConstraints(self, pose_stamped_array, link_array, lin_tol_array=None, ang_tol_array=None, weight_array=1.0):
+    def addPoseConstraints(self, pose_stamped_array:list[PoseStamped], link_array:list[str], lin_tol_array=None, ang_tol_array=None, weight_array=1.0):
         """
         Adds an equality constraint on the pose of multiple links to the motion planner, given the desired pose of these links.
 
@@ -843,7 +843,7 @@ class MoveGroupInterface():
             self.addPoseConstraint(pose_stamped_array[i], link=link_array[i], lin_tol=lin_tol, ang_tol=ang_tol, weight=weight)
 
     
-    async def addPoseConstraintFromJoints(self, joint_state, base_frame=None, lin_tol_array=None, ang_tol_array=None, weight_array=1.0, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+    async def addPoseConstraintFromJoints(self, joint_state:list[JointState], base_frame=None, lin_tol_array=None, ang_tol_array=None, weight_array=1.0, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
         """
         Adds an equality constraint on the pose of multiple links to the motion planner, given the joint states.
 
@@ -872,7 +872,7 @@ class MoveGroupInterface():
 
     # Position Constraints
 
-    def addPositionConstraint(self, pose_stamped, link=None, offset=None, tolerance=None, weight=1.0):
+    def addPositionConstraint(self, pose_stamped:PoseStamped, link=None, offset=None, tolerance=None, weight=1.0):
         """
         Adds an equality constraint on the position of a link to the motion planner, given the desired position of the link.
 
@@ -925,7 +925,7 @@ class MoveGroupInterface():
 
     """
 
-    async def addCollisionObject(self, shape, pose_stamped):
+    async def addCollisionObject(self, shape:SolidPrimitive, pose_stamped:PoseStamped):
         """
         Adds a rigid object to the planning scene.
 
@@ -953,7 +953,8 @@ class MoveGroupInterface():
         self.clearAllConstraints()
         self.start_state_ = None
 
-    async def computeFK(self, joint_values, base_frame=None, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+    async def computeFK(self, joint_values, base_frame=None, link_names=None,
+     mdof_joint_values=None, attached_objects=None, is_diff = None)->tuple[PoseStamped,list[str],MoveItErrorCodes]:
         """
         Computes forward kinematics.
 
@@ -984,13 +985,13 @@ class MoveGroupInterface():
         RS = self.jointsToRobotState(joint_values, mdof_joint_values, attached_objects, is_diff)
         req.robot_state = RS
 
-        response = await self.compute_fk_service_.call_async(req)
+        response:GetPositionFK.Response = await self.compute_fk_service_.call_async(req)
         poses = response.pose_stamped
         names = response.fk_link_names
         err = response.error_code
         return poses, names, err
     
-    async def computeIK(self, pose_stamped, link=None, start_guess=None, constraints=None):
+    async def computeIK(self, pose_stamped, link=None, start_guess=None, constraints=None)->tuple[RobotState,MoveItErrorCodes]:
         """
         Computes inverse kinematics.
 
@@ -1022,7 +1023,7 @@ class MoveGroupInterface():
         err = response.error_code
         return sol, err
     
-    def constructMotionPlanRequest(self):
+    def constructMotionPlanRequest(self)->MotionPlanRequest:
         """
         Constructs a motion plan request from the path planner's members.
 
@@ -1049,7 +1050,7 @@ class MoveGroupInterface():
         request.goal_constraints = [self.constraints_]
         return request
     
-    def constructPlannerOptions(self, plan_only=True):
+    def constructPlannerOptions(self, plan_only=True)->PlanningOptions:
         """
         Constructs a planning options message.
 
@@ -1159,7 +1160,7 @@ class MoveGroupInterface():
             RS.is_diff = is_diff
         return RS
 
-    async def makeMotionPlanRequest(self, plan_only=True, start_state = None, eef_pose_stamped=None, clean=True):
+    async def makeMotionPlanRequest(self, plan_only=True, start_state = None, eef_pose_stamped=None, clean=True)->tuple[MoveGroup.Result,GoalStatus]:
         """
         Make a motion plan request to the MoveGroup action through the move_action client.
 
