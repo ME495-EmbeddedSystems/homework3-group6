@@ -59,19 +59,23 @@ class MoveitAPI(Node):
 
         # Create action client to generate motion plans
         self.plan_client = ActionClient(self, MoveGroup, "move_action")
+        self.plan_client.wait_for_server(timeout_sec=10)
         self.motion_plan = None
 
         # Create action client to execute motion plans
         self.execute_client = ActionClient(
             self, ExecuteTrajectory, "execute_trajectory")
+        self.execute_client.wait_for_server(timeout_sec=10)
 
         # Create action client to open/close the Panda's grippers
         self.gripper_client = ActionClient(
             self, GripperCommand, "panda_gripper/gripper_action")
+        self.gripper_client.wait_for_server(timeout_sec=10)
 
         # Planning scene service client and publisher
         self.scene_client = self.create_client(
             GetPlanningScene, "get_planning_scene")
+        self.scene_client.wait_for_server(timeout_sec=10)
         self.box_publisher = self.create_publisher(
             PlanningScene, "planning_scene", 10)
 
