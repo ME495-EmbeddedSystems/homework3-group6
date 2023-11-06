@@ -286,7 +286,7 @@ class MoveGroupInterface():
         Sets the tolerance in orientation for the robot to reach the goal.
 
         Args:
-            n (int / float) : Orientation tolerance (radians). 
+            n (int / float) : Orientation tolerance. 
         """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_orientation_tolerance_ = float(n)
@@ -298,7 +298,7 @@ class MoveGroupInterface():
         Gets the tolerance in orientation for the robot to reach the goal.
 
         Returns:
-            goal_orientation_tolerance_ (int / float) : Orientation tolerance (radians).
+            goal_orientation_tolerance_ (int / float) : Orientation tolerance.
         """
         return self.goal_orientation_tolerance_
     
@@ -611,12 +611,26 @@ class MoveGroupInterface():
     """
 
     def clearAllConstraints(self):
+        """
+        Clears all constraints.
+        """
+
         self.clearPoseConstraints()
         self.clearJointConstraints()  
 
     # Joint Constraints
 
     def addJointConstraint(self, joint_name, position, tol_a=None, tol_b=None, weight=1.0):
+        """
+        Adds a constraint on the position of a joint within a certain bound, to the motion planner.
+
+        Args:
+            joint_name (str) : Joint name.
+            position (float) : mean position of joint.
+            tol_a (float) : Upper bound of joint.
+            tol_b (float) : Lower bound of joint.
+            weight (float) : Denotes relative importance to other constraints. Closer to zero means less important.
+        """
         new_jc = JointConstraint()
 
         if(tol_a is None):
@@ -633,6 +647,15 @@ class MoveGroupInterface():
         self.joint_constraints_.append(new_jc)
 
     def addJointConstraints(self, joint_states, tol_a_array=None, tol_b_array=None, weight_array=None):
+        """
+        Adds a constraint on the position of multiple joints within certain bounds, to the motion planner.
+
+        Args:
+            joint_states (sensor_msgs/JointState[]) : State of each named joint with its corresponding mean position.
+            tol_a_array (float[]) : Array of upper bounds of joint_states.
+            tol_b_array (float[]) : Array of lower bound of joint_states.
+            weight_array (float[]) : Array denoting relative importance to other constraints. Closer to zero means less important.
+        """
         for i in range(len(joint_states.name)):
             if(tol_a_array is None):
                 tol_a = None
@@ -658,6 +681,15 @@ class MoveGroupInterface():
             self.addJointConstraint(joint_states.name[i], joint_states.position[i], tol_a=tol_a, tol_b=tol_b, weight=weight)
 
     async def addJointConstraintFromPose(self, pose_stamped, link=None, start_guess=None, constraints=None, tol_a=None, tol_b=None, weight=1.0):
+        """
+        Adds a constraint on the position of multiple joints within certain bounds to the motion planner, given the pose of the end effector when all joints are at the mean position.
+
+        Args:
+            pose_stamped (geometry_msgs/PoseStamped) : Time stamped pose of the end effector.
+            link (str) : End effector link.
+            start_guess (moveit_msgs/RobotState) : Initial guess for computing joints via IK.
+            constraints (moveit_msgs/Constraints) : Set of constraints the IK must obey.
+        """
         sol, err = await self.computeIK(pose_stamped, link, start_guess, constraints)
         if(err.val == 1):
             JS = JointState()
@@ -671,9 +703,15 @@ class MoveGroupInterface():
             self.logger_.info('Inverse Kinematics failed with code: {0}'.format(err.val))
 
     def clearJointConstraints(self):
+        """
+        Clears joint constraints.
+        """
         self.joint_constraints_ = []
 
     def mergeJointConstraints(self):
+        """
+        Merges redundant joint constraints and discards incompatible joint constraints.
+        """
         # !!! Fix this: Validate, double check logic
         # For sure doesnt work now if many constraints with same joint_name
         # Possible fix: find all indicies with same joint name
@@ -711,6 +749,16 @@ class MoveGroupInterface():
     # Orientation Constraints
     
     def addOrientationConstraint(self, pose_stamped, link=None, tolerance=None, weight=1.0):
+        """
+        Adds an equality constraint on the orientation of a link to the motion planner, given the desired orientation of the link.
+
+        Args:
+            pose_stamped (geometry_msgs/PoseStamped) : Time stamped pose of the link.
+            link (str) : Constrained link.
+            tolerance (float) : XYZ axis tolerance.
+            weight (float) : Denotes relative importance to other constraints. Closer to zero means less important.
+        """
+        
         new_oc = OrientationConstraint()
         new_oc.header = pose_stamped.header
         new_oc.orientation = pose_stamped.pose.orientation
@@ -732,15 +780,38 @@ class MoveGroupInterface():
         self.orientation_constraints_.append(new_oc)
 
     def clearOrientationConstraints(self):
+        """
+        Clears orientation constraints.
+        """
         self.orientation_constraints_ = []
 
     # Pose Constraints
 
     def addPoseConstraint(self, pose_stamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
+        """
+        Adds an equality constraint on the pose of a link to the motion planner, given the desired pose of the link.
+
+        Args:
+            pose_stamped (geometry_msgs/PoseStamped) : Time stamped pose of the link.
+            link (str) : Constrained link.
+            lin_tol (float) : Position tolerance (m).
+            ang_tol (float) : Orientation tolerance (rad).
+            weight (float) : Denotes relative importance to other constraints. Closer to zero means less important.
+        """
         self.addOrientationConstraint(pose_stamped, link=link, tolerance=ang_tol, weight=weight)
         self.addPositionConstraint(pose_stamped, link=link, tolerance=lin_tol, weight=weight)
 
     def addPoseConstraints(self, pose_stamped_array, link_array, lin_tol_array=None, ang_tol_array=None, weight_array=1.0):
+        """
+        Adds an equality constraint on the pose of multiple links to the motion planner, given the desired pose of these links.
+
+        Args:
+            pose_stamped_array (geometry_msgs/PoseStamped[]) : Array of time stamped poses of links.
+            link_array (str[]) : Array of constrained links.
+            lin_tol_array (float[]) : Array of position tolerances (m).
+            ang_tol_array (float[]) : Array of orientation tolerances (rad).
+            weight_array (float[]) : Array denoting relative importance to other constraints. Closer to zero means less important.
+        """
         for i in range(len(pose_stamped_array)):
             if(lin_tol_array is None):
                 lin_tol = None
@@ -766,6 +837,19 @@ class MoveGroupInterface():
 
     
     async def addPoseConstraintFromJoints(self, joint_state, base_frame=None, lin_tol_array=None, ang_tol_array=None, weight_array=1.0, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        """
+        Adds an equality constraint on the pose of multiple links to the motion planner, given the joint states.
+
+        Args:
+            joint_states (sensor_msgs/JointState[]) : State of each named joint with its corresponding mean position.
+            lin_tol_array (float[]) : Array of position tolerances (m).
+            ang_tol_array (float[]) : Array of orientation tolerances (rad).
+            weight_array (float[]) : Array denoting relative importance to other constraints. Closer to zero means less important.
+            link_names (str[]) : Array of constrained links.
+            mdof_joint_values (sensor_msgs/MultiDOFJointState) : Starting multi-dof joint states of the robot.
+            attached_objects (moveit_msgs/AttachedCollisionObject[]) : Attached collision objects.
+            is_diff (bool) : Flag indicating whether this scene is to be interpreted as a diff with respect to some other scene.
+        """
         poses, names, err = await self.computeFK(joint_values=joint_state, base_frame=base_frame, link_names=link_names, mdof_joint_values=mdof_joint_values, attached_objects=attached_objects, is_diff = is_diff)
         if(err.val == 1):
             self.addPoseConstraints(poses, names, lin_tol_array=lin_tol_array, ang_tol_array=ang_tol_array, weight_array=weight_array)
@@ -773,12 +857,24 @@ class MoveGroupInterface():
             self.logger_.info('Forward Kinematics failed with code: {0}'.format(err.val))
 
     def clearPoseConstraints(self):
+        """
+        Clears pose constraints.
+        """
         self.clearOrientationConstraints()
         self.clearPositionConstraints()
 
     # Position Constraints
 
     def addPositionConstraint(self, pose_stamped, link=None, offset=None, tolerance=None, weight=1.0):
+        """
+        Adds an equality constraint on the position of a link to the motion planner, given the desired position of the link.
+
+        Args:
+            pose_stamped (geometry_msgs/PoseStamped) : Time stamped pose of the link.
+            link (str) : Constrained link.
+            tolerance (float) : Position tolerance (m).
+            weight (float) : Denotes relative importance to other constraints. Closer to zero means less important.
+        """
         new_pc = PositionConstraint()
         new_pc.header = pose_stamped.header
 
@@ -810,6 +906,9 @@ class MoveGroupInterface():
         self.position_constraints_.append(new_pc)
 
     def clearPositionConstraints(self):
+        """
+        Clears position constraints.
+        """
         self.position_constraints_ = []
 
     
