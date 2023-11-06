@@ -18,6 +18,7 @@ from tf2_ros.buffer import Buffer
 
 
 class MoveitAPI(Node):
+    """API to easily control Franka arm."""
 
     def __init__(self):
         super().__init__('moveit_api')
