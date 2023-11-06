@@ -1,7 +1,5 @@
 /moveit_api:
   ros__parameters:
-    namespace: ''
     base_frame_id: 'panda_link0'
     end_effector_link: 'panda_link8'
     group_name: 'panda_manipulator'
-    use_joint_constraints: False

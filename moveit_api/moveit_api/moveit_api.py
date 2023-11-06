@@ -31,13 +31,12 @@ class MoveitAPI(Node):
         self.base_frame_id = self.get_parameter('base_frame_id').get_parameter_value().string_value
         self.end_effector_link = self.get_parameter('end_effector_link').get_parameter_value().string_value
         self.group_name = self.get_parameter('group_name').get_parameter_value().string_value
-        self.joint_state_topic = 'joint_states'
 
         # Create Reentrant Callback Group
         self.cbgroup = ReentrantCallbackGroup()
 
         # Subscriber for joint state messages
-        self.joint_state_sub = self.create_subscription(JointState, self.joint_state_topic, self.joint_state_callback, 10)
+        self.joint_state_sub = self.create_subscription(JointState, 'joint_states', self.joint_state_callback, 10)
         self.joint_state_msg = None
 
         # Create services to generate motion plan, execute motion plan, place box, and open/close grippers
