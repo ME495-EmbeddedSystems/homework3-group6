@@ -56,6 +56,7 @@ class MoveitAPI(Node):
         # Create service client to comput IK
         self.ik_client = self.create_client(
             GetPositionIK, "compute_ik", callback_group=self.cbgroup)
+        self.ik_client.wait_for_service(timeout_sec=10)
 
         # Create action client to generate motion plans
         self.plan_client = ActionClient(self, MoveGroup, "move_action")
@@ -75,7 +76,7 @@ class MoveitAPI(Node):
         # Planning scene service client and publisher
         self.scene_client = self.create_client(
             GetPlanningScene, "get_planning_scene")
-        self.scene_client.wait_for_server(timeout_sec=10)
+        self.scene_client.wait_for_service(timeout_sec=10)
         self.box_publisher = self.create_publisher(
             PlanningScene, "planning_scene", 10)
 
