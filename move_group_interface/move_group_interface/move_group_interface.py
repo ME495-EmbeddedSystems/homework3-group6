@@ -68,7 +68,7 @@ class MoveGroupInterface():
 
     """
 
-    def __init__(self, node, robotModel, tf_buffer=None, namespace="", wait_for_servers=3.0):
+    def __init__(self, node:Node, robotModel:RobotModel, tf_buffer=None, namespace:str="", wait_for_servers_sec:float=3.0):
 
         """
         Initializes the motion planning interface.
@@ -92,11 +92,11 @@ class MoveGroupInterface():
         self.node_ = node
         self.tf_buffer_ = tf_buffer # Unsued? Why is it in the c++ version?
         self.namespace_ = namespace #Nice option but also unused 
-        self.wait_for_servers_ = wait_for_servers
+        self.wait_for_servers_sec = wait_for_servers_sec
         
         self.logger_ = self.node_.get_logger()
         self.clock_ = self.node_.get_clock()
-        self.cb_group_ = MutuallyExclusiveCallbackGroup() # Change to MECB probablly 
+        self.client_cb_group_ = MutuallyExclusiveCallbackGroup() # Change to MECB probablly 
 
 
         self.planning_pipeline_id_ = ""
@@ -143,42 +143,42 @@ class MoveGroupInterface():
 
         # ACTION CLIENTS
 
-        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "execute_trajectory", callback_group=self.cb_group_)
-        if not self.execute_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
+        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "execute_trajectory", callback_group=self.client_cb_group_)
+        if not self.execute_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for execute_trajectory action to become available")
 
-        self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "move_action", callback_group=self.cb_group_)
-        if not self.move_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_):
+        self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "move_action", callback_group=self.client_cb_group_)
+        if not self.move_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for move_group action to become available")
 
         # SERVICE CLIENTS
 
-        self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "compute_cartesian_path", callback_group=self.cb_group_)
-        if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "compute_cartesian_path", callback_group=self.client_cb_group_)
+        if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for compute_cartesian_path service")
         
-        self.compute_fk_service_ = self.node_.create_client(GetPositionFK, self.namespace_+"compute_fk", callback_group=self.cb_group_)
-        if not self.compute_fk_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.compute_fk_service_ = self.node_.create_client(GetPositionFK, self.namespace_+"compute_fk", callback_group=self.client_cb_group_)
+        if not self.compute_fk_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for compute_fk service")
         
-        self.compute_ik_service_ = self.node_.create_client(GetPositionIK, self.namespace_+"compute_ik", callback_group=self.cb_group_)
-        if not self.compute_ik_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.compute_ik_service_ = self.node_.create_client(GetPositionIK, self.namespace_+"compute_ik", callback_group=self.client_cb_group_)
+        if not self.compute_ik_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for compute_ik service")
         
-        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "get_planner_params", callback_group=self.cb_group_)
-        if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "get_planner_params", callback_group=self.client_cb_group_)
+        if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for get_planner_params service")
         
-        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"get_planning_scene", callback_group=self.cb_group_)
-        if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"get_planning_scene", callback_group=self.client_cb_group_)
+        if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for get_planning_scene service")
 
-        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "query_planner_interface", callback_group=self.cb_group_)
-        if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "query_planner_interface", callback_group=self.client_cb_group_)
+        if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for query_planner_interface service")
 
-        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "set_planner_params", callback_group=self.cb_group_)
-        if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_):
+        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "set_planner_params", callback_group=self.client_cb_group_)
+        if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
             raise RuntimeError("Timeout waiting for set_planner_params service")
 
 
@@ -188,7 +188,7 @@ class MoveGroupInterface():
 
     """
 
-    def setAllowedPlanningTime(self, n):
+    def setAllowedPlanningTime(self, n:float):
         """
         Sets the maximum time the motion planner is allowed to plan for.
 
@@ -203,7 +203,7 @@ class MoveGroupInterface():
         else:
             self.logger_.error("Attempt to set allowed_planning_time to invalid type")
 
-    def getAllowedPlanningTime(self):
+    def getAllowedPlanningTime(self)->float:
         """
         Gets the maximum time the motion planner is allowed to plan for.
 
@@ -213,7 +213,7 @@ class MoveGroupInterface():
 
         return self.allowed_planning_time_
 
-    def setCanLook(self, n):
+    def setCanLook(self, n:bool):
         """
         Sets the flag which allows the action of planning and executing to look around if it seems that not enough information is available about the environment.
 
@@ -224,7 +224,7 @@ class MoveGroupInterface():
             self.can_look_ = n
         else:
             self.logger_.error("Attempt to set can_look to invalid type")
-    def getCanLook(self):
+    def getCanLook(self)->bool:
         """
         Gets the flag which allows the action of planning and executing to look around if it seems that not enough information is available about the environment.
 
@@ -233,7 +233,7 @@ class MoveGroupInterface():
         """
         return self.can_look_
     
-    def setCanReplan(self, n):
+    def setCanReplan(self, n:bool):
         """
         Sets the flag which allows the planner to replan, in case the plan becomes invalidated during execution.
 
@@ -265,12 +265,12 @@ class MoveGroupInterface():
         default_planner_id = self.node_.get_parameter("move_group/default_planning_pipeline").get_parameter_value().string_value
         return default_planner_id
     
-    def setGoalJointTolerance(self, n):
+    def setGoalJointTolerance(self, n:float):
         """
         Sets the tolerance in joint angles for the robot to reach the goal.
 
         Args:
-            n (int / float) : Joint angle tolerance (radians).
+            n (float) : Joint angle tolerance (radians).
         """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_joint_tolerance_ = float(n)
@@ -282,7 +282,7 @@ class MoveGroupInterface():
         Gets the tolerance in joint angles for the robot to reach the goal.
 
         Returns:
-            goal_joint_tolerance_ (int / float) : Joint angle tolerance (radians).
+            goal_joint_tolerance_ (float) : Joint angle tolerance (radians).
         """
         return self.goal_joint_tolerance_
     
@@ -291,7 +291,7 @@ class MoveGroupInterface():
         Sets the tolerance in orientation for the robot to reach the goal.
 
         Args:
-            n (int / float) : Orientation tolerance. 
+            n (float) : Orientation tolerance. 
         """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_orientation_tolerance_ = float(n)
@@ -303,7 +303,7 @@ class MoveGroupInterface():
         Gets the tolerance in orientation for the robot to reach the goal.
 
         Returns:
-            goal_orientation_tolerance_ (int / float) : Orientation tolerance.
+            goal_orientation_tolerance_ (float) : Orientation tolerance.
         """
         return self.goal_orientation_tolerance_
     
@@ -312,7 +312,7 @@ class MoveGroupInterface():
         Sets the tolerance in position for the robot to reach the goal.
 
         Args:
-            n (int / float) : Position tolerance (m). 
+            n (float) : Position tolerance (m). 
         """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_position_tolerance_ = float(n)
@@ -323,7 +323,7 @@ class MoveGroupInterface():
         Gets the tolerance in position for the robot to reach the goal.
 
         Returns:
-            goal_position_tolerance_ (int / float) : Position tolerance (m).
+            goal_position_tolerance_ (float) : Position tolerance (m).
         """
         return self.goal_position_tolerance_
     
