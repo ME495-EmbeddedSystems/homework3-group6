@@ -5,7 +5,9 @@ from moveit_interfaces.srv import PlaceBox, Plan
 from std_srvs.srv import Empty, SetBool
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
-from moveit_msgs.msg import PositionIKRequest, CollisionObject, PlanningScene, PlanningSceneComponents, MotionPlanRequest, Constraints, JointConstraint, PositionConstraint, OrientationConstraint, BoundingVolume, MoveItErrorCodes
+from moveit_msgs.msg import PositionIKRequest, CollisionObject, PlanningScene, \
+    PlanningSceneComponents, MotionPlanRequest, Constraints, PositionConstraint, \
+    OrientationConstraint, BoundingVolume, MoveItErrorCodes
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from control_msgs.action import GripperCommand
@@ -13,10 +15,6 @@ from shape_msgs.msg import SolidPrimitive
 from rclpy.callback_groups import ReentrantCallbackGroup
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros.buffer import Buffer
-import copy
-import math
-from .quaternion import angle_axis_to_quaternion
-
 
 
 class MoveitAPI(Node):
@@ -28,44 +26,57 @@ class MoveitAPI(Node):
         self.declare_parameter('base_frame_id', 'panda_link0')
         self.declare_parameter('end_effector_link', 'panda_link8')
         self.declare_parameter('group_name', 'panda_manipulator')
-        self.base_frame_id = self.get_parameter('base_frame_id').get_parameter_value().string_value
-        self.end_effector_link = self.get_parameter('end_effector_link').get_parameter_value().string_value
-        self.group_name = self.get_parameter('group_name').get_parameter_value().string_value
+        self.base_frame_id = self.get_parameter(
+            'base_frame_id').get_parameter_value().string_value
+        self.end_effector_link = self.get_parameter(
+            'end_effector_link').get_parameter_value().string_value
+        self.group_name = self.get_parameter(
+            'group_name').get_parameter_value().string_value
 
         # Create Reentrant Callback Group
         self.cbgroup = ReentrantCallbackGroup()
 
         # Subscriber for joint state messages
-        self.joint_state_sub = self.create_subscription(JointState, 'joint_states', self.joint_state_callback, 10)
+        self.joint_state_sub = self.create_subscription(
+            JointState, 'joint_states', self.joint_state_callback, 10)
         self.joint_state_msg = None
 
-        # Create services to generate motion plan, execute motion plan, place box, and open/close grippers
-        self.plan = self.create_service(Plan, "plan", self.generate_motion_plan, callback_group=self.cbgroup)
-        self.execute = self.create_service(Empty, "execute", self.execute_trajectory, callback_group=self.cbgroup)
-        self.place_box = self.create_service(PlaceBox, "place_box", self.place_box_callback, callback_group=self.cbgroup)
-        self.move_gripper = self.create_service(SetBool, "gripper", self.gripper_callback, callback_group=self.cbgroup)
+        # Create services to generate motion plan, execute motion plan,
+        # place box, and open/close grippers
+        self.plan = self.create_service(
+            Plan, "plan", self.generate_motion_plan, callback_group=self.cbgroup)
+        self.execute = self.create_service(
+            Empty, "execute", self.execute_trajectory, callback_group=self.cbgroup)
+        self.place_box = self.create_service(
+            PlaceBox, "place_box", self.place_box_callback, callback_group=self.cbgroup)
+        self.move_gripper = self.create_service(
+            SetBool, "gripper", self.gripper_callback, callback_group=self.cbgroup)
 
         # Create service client to comput IK
-        self.ik_client = self.create_client(GetPositionIK, "compute_ik", callback_group=self.cbgroup)
+        self.ik_client = self.create_client(
+            GetPositionIK, "compute_ik", callback_group=self.cbgroup)
 
         # Create action client to generate motion plans
         self.plan_client = ActionClient(self, MoveGroup, "move_action")
         self.motion_plan = None
 
         # Create action client to execute motion plans
-        self.execute_client = ActionClient(self, ExecuteTrajectory, "execute_trajectory")
+        self.execute_client = ActionClient(
+            self, ExecuteTrajectory, "execute_trajectory")
 
         # Create action client to open/close the Panda's grippers
-        self.gripper_client = ActionClient(self, GripperCommand, "panda_gripper/gripper_action")
+        self.gripper_client = ActionClient(
+            self, GripperCommand, "panda_gripper/gripper_action")
 
         # Planning scene service client and publisher
-        self.scene_client = self.create_client(GetPlanningScene, "get_planning_scene")
-        self.box_publisher = self.create_publisher(PlanningScene, "planning_scene", 10)
+        self.scene_client = self.create_client(
+            GetPlanningScene, "get_planning_scene")
+        self.box_publisher = self.create_publisher(
+            PlanningScene, "planning_scene", 10)
 
         # Set up TF listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-
 
     async def place_box_callback(self, request, response):
         """
@@ -83,12 +94,14 @@ class MoveitAPI(Node):
 
         """
         component = PlanningSceneComponents()
-        planning_scene = await self.scene_client.call_async(GetPlanningScene.Request(components=component))
+        planning_scene = await self.scene_client.call_async(
+            GetPlanningScene.Request(components=component))
         scene = planning_scene.scene
 
         solid_primitive = SolidPrimitive()
         solid_primitive.type = 1
-        solid_primitive.dimensions = [request.x_dim, request.y_dim, request.z_dim]
+        solid_primitive.dimensions = [
+            request.x_dim, request.y_dim, request.z_dim]
 
         pose = Pose()
 
@@ -111,10 +124,10 @@ class MoveitAPI(Node):
         self.box_publisher.publish(scene)
 
         return response
-    
+
     def build_ik_request(self, pose):
         """
-        Builds a position IK request.
+        Build a position IK request.
 
         Args
         ----
@@ -124,7 +137,7 @@ class MoveitAPI(Node):
         -------
            A GetPositionIK Request object
 
-        """ 
+        """
         pos_ik_req = PositionIKRequest()
         pos_ik_req.group_name = self.group_name
         pos_ik_req.robot_state.joint_state = self.joint_state_msg
@@ -148,10 +161,10 @@ class MoveitAPI(Node):
         self.get_logger().info(str(pos_ik_req))
 
         return get_pos_ik_req
-    
-    async def build_plan_request(self, start_state, goal_pose, plan_mode, plan_only = True):
+
+    async def build_plan_request(self, start_state, goal_pose, plan_mode, plan_only=True):
         """
-        Builds a path planning request.
+        Build a path planning request.
 
         Args
         ----
@@ -170,7 +183,7 @@ class MoveitAPI(Node):
         """
         # Create Constraints
         goal_constraints = Constraints()
-    
+
         if plan_mode == 0 or plan_mode == 2:
 
             solid_primitive = SolidPrimitive()
@@ -183,7 +196,7 @@ class MoveitAPI(Node):
             pose.position.z = goal_pose.position.z
 
             BV = BoundingVolume()
-            BV.primitives =  [solid_primitive]
+            BV.primitives = [solid_primitive]
             BV.primitive_poses = [pose]
 
             position_constraint = PositionConstraint()
@@ -204,7 +217,8 @@ class MoveitAPI(Node):
             orientation_constraint.absolute_z_axis_tolerance = 1e-3
             orientation_constraint.weight = 1.0
 
-            goal_constraints.orientation_constraints.append(orientation_constraint)
+            goal_constraints.orientation_constraints.append(
+                orientation_constraint)
 
         # Create Motion Plan Request
         req = MotionPlanRequest()
@@ -231,10 +245,10 @@ class MoveitAPI(Node):
         plan_request.planning_options.plan_only = plan_only
 
         return plan_request
-    
+
     async def compute_ik(self, pose):
         """
-        Computes the inverse kinematic for a given end effector pose
+        Compute the inverse kinematic for a given end effector pose.
 
         Args
         ----
@@ -252,10 +266,10 @@ class MoveitAPI(Node):
         ik_response = await self.ik_client.call_async(get_pos_ik_req)
 
         return ik_response
-    
+
     async def generate_motion_plan(self, request, response):
         """
-        Generates a motion plan for the robot.
+        Generate a motion plan for the robot.
 
         Args
         ----
@@ -267,13 +281,15 @@ class MoveitAPI(Node):
 
         """
         # If start_pose is provided, compute the JointState for that pose
-        if request.use_start_pose == True:
+        if request.use_start_pose is True:
 
             ik_response = await self.compute_ik(request.start_pose)
 
             # If no IK solution is found
             if ik_response.error_code.val == MoveItErrorCodes.NO_IK_SOLUTION:
-                self.get_logger().warn("No IK solution found for start pose. Starting at current robot configuration instead.")
+                self.get_logger().warn(
+                    "No IK solution found for start pose. Starting at current \
+                        robot configuration instead.")
                 start_joint_state = self.joint_state_msg
 
             # If IK solution is found, use that JointState as starting JointState
@@ -285,7 +301,9 @@ class MoveitAPI(Node):
             start_joint_state = self.joint_state_msg
 
         # Create the MoveGroup Goal
-        plan_req = await self.build_plan_request(start_joint_state, request.goal_pose, request.plan_mode, request.plan_only)
+        plan_req = await self.build_plan_request(
+            start_joint_state, request.goal_pose,
+            request.plan_mode, request.plan_only)
 
         # Call the move action client
         future_response = await self.plan_client.send_goal_async(plan_req)
@@ -293,10 +311,10 @@ class MoveitAPI(Node):
         self.motion_plan = plan_response
 
         return response
-    
+
     async def execute_trajectory(self, request, response):
         """
-        Executes a previously computed motion plan.
+        Execute a previously computed motion plan.
 
         Args
         ----
@@ -313,7 +331,7 @@ class MoveitAPI(Node):
             execute_req.trajectory = self.motion_plan.result.planned_trajectory
 
             future_response = await self.execute_client.send_goal_async(execute_req)
-            execute_response = await future_response.get_result_async()
+            await future_response.get_result_async()
 
         # Otherwise, display an error to the user
         else:
@@ -323,7 +341,7 @@ class MoveitAPI(Node):
 
     async def gripper_callback(self, request, response):
         """
-        Opens or closes the gripper of the Interbotix arm.
+        Open or close the gripper of the Interbotix arm.
 
         Args
         ----
@@ -339,7 +357,7 @@ class MoveitAPI(Node):
         # Create the GripperCommand Goal
         gripper_request = GripperCommand.Goal()
 
-        if open == False:
+        if open is False:
             self.get_logger().info("Closing Gripper")
             gripper_request.command.position = 0.025
             gripper_request.command.max_effort = 10.0
@@ -349,8 +367,7 @@ class MoveitAPI(Node):
 
         # Call the move action client
         future_response = await self.gripper_client.send_goal_async(gripper_request)
-        plan_response = await future_response.get_result_async()
-        self.motion_plan = plan_response
+        await future_response.get_result_async()
 
         response.success = True
 
@@ -358,15 +375,16 @@ class MoveitAPI(Node):
 
     def joint_state_callback(self, msg):
         """
-        Updated the current JointState of the robot.
+        Update the current JointState of the robot.
 
-        Args
+        Args:
         ----
             msg (JointState): The current JointState of the robot
 
         """
         self.joint_state_msg = msg
-        
+
+
 def main(args=None):
     rclpy.init(args=args)
 
