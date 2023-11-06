@@ -651,7 +651,7 @@ class MoveGroupInterface():
         Adds a constraint on the position of multiple joints within certain bounds, to the motion planner.
 
         Args:
-            joint_states (sensor_msgs/JointState[]) : State of each named joint with its corresponding mean position.
+            joint_states (sensor_msgs/JointState) : State of each named joint with its corresponding mean position.
             tol_a_array (float[]) : Array of upper bounds of joint_states.
             tol_b_array (float[]) : Array of lower bound of joint_states.
             weight_array (float[]) : Array denoting relative importance to other constraints. Closer to zero means less important.
@@ -841,12 +841,12 @@ class MoveGroupInterface():
         Adds an equality constraint on the pose of multiple links to the motion planner, given the joint states.
 
         Args:
-            joint_states (sensor_msgs/JointState[]) : State of each named joint with its corresponding mean position.
+            joint_states (sensor_msgs/JointState) : State of each named single-dof joint of the robot.
             lin_tol_array (float[]) : Array of position tolerances (m).
             ang_tol_array (float[]) : Array of orientation tolerances (rad).
             weight_array (float[]) : Array denoting relative importance to other constraints. Closer to zero means less important.
             link_names (str[]) : Array of constrained links.
-            mdof_joint_values (sensor_msgs/MultiDOFJointState) : Starting multi-dof joint states of the robot.
+            mdof_joint_values (sensor_msgs/MultiDOFJointState) : State of each named multi-dof joint of the robot.
             attached_objects (moveit_msgs/AttachedCollisionObject[]) : Attached collision objects.
             is_diff (bool) : Flag indicating whether this scene is to be interpreted as a diff with respect to some other scene.
         """
@@ -919,6 +919,13 @@ class MoveGroupInterface():
     """
 
     async def addCollisionObject(self, shape, pose_stamped):
+        """
+        Adds a rigid object to the planning scene.
+
+        Args:
+            shape (shape_msgs/SolidPrimitive[]) : Shapes that the body consists of.
+            pose_stamped (geometry_msgs/Pose[]) : Respective poses of these shapes.
+        """
         scene = await self.getPlanningScene()
         
         obj = CollisionObject()
@@ -932,11 +939,31 @@ class MoveGroupInterface():
         self.planning_scene_pub_.publish(scene)
 
     def cleanUp(self):
-        """Clean up after planning"""
+        """
+        Clean up after planning
+        """
         self.clearAllConstraints()
         self.start_state_ = None
 
     async def computeFK(self, joint_values, base_frame=None, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+        """
+        Computes forward kinematics.
+
+        Args:
+            joint_values (sensor_msgs/JointState) : State of each named joint of the robot.
+            base_frame (str) : Name of base_frame. Defaults to base_link_
+            link_names (str[]) : Vector of link names for which forward kinematics must be computed.
+            mdof_joint_values (sensor_msgs/MultiDOFJointState) : State of each multi-dof joint of the robot.
+            attached_objects (moveit_msgs/AttachedCollisionObject[]) : Attached collision objects.
+            is_diff (bool) : Flag indicating whether this scene is to be interpreted as a diff with respect to some other scene.
+
+        Returns:
+            poses (geometry_msgs/PoseStamped[]) : The resultant vector of PoseStamped messages that contains the (stamped) poses of the requested links.
+            names (str[]) : The list of link names corresponding to the poses
+            err (moveit_msgs/MoveItErrorCodes) : MoveIt! error codes.
+    
+        """
+
         req = GetPositionFK.Request()
         if(base_frame is None):
             base_frame = self.base_link_
@@ -956,8 +983,21 @@ class MoveGroupInterface():
         return poses, names, err
     
     async def computeIK(self, pose_stamped, link=None, start_guess=None, constraints=None):
+        """
+        Computes inverse kinematics.
+
+        Args:
+            pose_stamped (geometry_msgs/PoseStamped) : Time stamped pose of the end effector.
+            link (str) : Given link.
+            start_guess (moveit_msgs/RobotState) : Initial guess for computing joints via IK.
+            constraints (moveit_msgs/Constraints) : Set of constraints the IK must obey.
+
+        Returns:
+            sol (moveit_msgs/RobotState) : Robot state solution in the same order as start_guess.
+            err (moveit_msgs/MoveItErrorCodes) : MoveIt! error codes.
+    
+        """
         # Does not support multiple link submissions
-        # Call ya own service ya bums
         req = GetPositionIK.Request().ik_request
         req.group_name = self.group_name_
         if(start_guess is None):
@@ -975,6 +1015,12 @@ class MoveGroupInterface():
         return sol, err
     
     def constructMotionPlanRequest(self):
+        """
+        Constructs a motion plan request from the path planner's members.
+
+        Returns:
+            request (moveit_msgs/MotionPlanRequest) : Motion plan request from the path planner's members.
+        """
         request = MotionPlanRequest()
         request.group_name = self.group_name_
         request.num_planning_attempts = self.num_planning_attemps_
@@ -995,6 +1041,15 @@ class MoveGroupInterface():
         return request
     
     def constructPlannerOptions(self, plan_only=True):
+        """
+        Constructs a planning options message.
+
+        Args:
+            plan_only (bool) : If true, the action returns an executable plan in the response but does not attempt an execution.
+
+        Returns:
+            options (moveit_msgs/MotionPlanReq) : Planning options message.
+        """
         options = PlanningOptions()
         options.plan_only = plan_only
         options.look_around = self.can_look_
