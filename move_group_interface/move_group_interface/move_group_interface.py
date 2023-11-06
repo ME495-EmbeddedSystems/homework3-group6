@@ -1,4 +1,5 @@
 import dataclasses
+from typing import Optional
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Pose, PoseStamped
@@ -10,7 +11,7 @@ from moveit_msgs.msg import (BoundingVolume, CollisionObject, Constraints,
                              PlanningOptions, PlanningScene,
                              PlanningSceneComponents, PositionConstraint,
                              PositionIKRequest, RobotState, RobotTrajectory,
-                             WorkspaceParameters)
+                             WorkspaceParameters , AttachedCollisionObject)
 from moveit_msgs.srv import (GetCartesianPath, GetPlannerParams,
                              GetPlanningScene, GetPositionFK, GetPositionIK,
                              QueryPlannerInterfaces, SetPlannerParams)
@@ -18,7 +19,7 @@ from rclpy.action import ActionClient
 from rclpy.callback_groups import (MutuallyExclusiveCallbackGroup,
                                    ReentrantCallbackGroup)
 from rclpy.node import Node
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, MultiDOFJointState
 from shape_msgs.msg import SolidPrimitive
 
 @dataclasses.dataclass
@@ -286,7 +287,7 @@ class MoveGroupInterface():
         """
         return self.goal_joint_tolerance_
     
-    def setGoalOrientationolerance(self, n):
+    def setGoalOrientationolerance(self, n:float):
         """
         Sets the tolerance in orientation for the robot to reach the goal.
 
@@ -307,7 +308,7 @@ class MoveGroupInterface():
         """
         return self.goal_orientation_tolerance_
     
-    def setGoalPositionTolerance(self, n):
+    def setGoalPositionTolerance(self, n:float):
         """
         Sets the tolerance in position for the robot to reach the goal.
 
@@ -327,7 +328,7 @@ class MoveGroupInterface():
         """
         return self.goal_position_tolerance_
     
-    def setLookAroundAttemps(self, n):
+    def setLookAroundAttemps(self, n:int):
         if isinstance(n, int):
             if(n < 0):
                 self.logger_.error("Attempt to set look attempts negative. Set as positive instead")
@@ -338,12 +339,12 @@ class MoveGroupInterface():
     def getLookAroundAttemps(self):
         return self.look_around_attempts_
     
-    def setMaxAccelerationScaling(self, n):
+    def setMaxAccelerationScaling(self, n:float):
         """
         Set the maximum acceleration scaling of the motion plan.
 
         Args:
-            n (float / int) : Maximum acceleration scaling factor ranging from 0.01 to 1.
+            n (float) : Maximum acceleration scaling factor ranging from 0.01 to 1.
 
         """
         if isinstance(n, float) or isinstance(n, int):
@@ -368,7 +369,7 @@ class MoveGroupInterface():
         """
         return self.max_acceleration_scaling_factor_
 
-    def setMaxVelocityScaling(self, n):
+    def setMaxVelocityScaling(self, n:float):
         """
         Set the maximum velocity scaling of the motion plan.
 
@@ -376,7 +377,7 @@ class MoveGroupInterface():
             n (float / int) : Maximum velocity scaling factor ranging from 0.01 to 1.
 
         """
-        if isinstance(n, float) or isinstance(n, int):
+        if isinstance(n) or isinstance(n, int):
             if(n >= 0.01):
                 if(n > 1.0):
                     self.logger_.info("Maximum velocity factor exceeding 1.0. Limiting.")
@@ -398,7 +399,7 @@ class MoveGroupInterface():
         """
         return self.max_velocity_scaling_factor_
     
-    def setNumPlanningAttemps(self, n):
+    def setNumPlanningAttemps(self, n:int):
         """
         Set the number of times the motion plan is computed. The shortest solution will be reported.
 
@@ -411,7 +412,7 @@ class MoveGroupInterface():
         else:
             self.logger_.error("Attempt to set num_planning_attempts to invalid type")
 
-    def getNumPlanningAttemps(self):
+    def getNumPlanningAttemps(self)->int:
         """
         Get the number of times the motion plan is computed. The shortest solution will be reported.
 
@@ -421,7 +422,7 @@ class MoveGroupInterface():
         """
         return self.num_planning_attemps_
     
-    def setPlannerId(self,n):
+    def setPlannerId(self,n:str):
         """
         Set the name of the planning algorithm to use. If not specified, the default planner of the configured planning pipeline is used.
 
@@ -434,7 +435,7 @@ class MoveGroupInterface():
         else:
             self.logger_.error("Attempt to set planner_id to invalid type")
     
-    def getPlannerId(self):
+    def getPlannerId(self)->str:
         """
         Get the name of the planning algorithm to use. If not specified, the default planner of the configured planning pipeline is used.
 
@@ -444,7 +445,7 @@ class MoveGroupInterface():
         """
         return self.planner_id_
     
-    def setPlannerParams(self, planner_id, group, params, replace=False):
+    def setPlannerParams(self, planner_id:str, group:str, params : PlannerParams):
         """
         Makes an asynchronous call to the setPlannerParams service through the set_planner_params client.
         This parameterizes the planner, and sets its config and group.
@@ -462,7 +463,7 @@ class MoveGroupInterface():
 
         self.set_params_service_.call_async(request)
     
-    async def getPlannerParams(self, planner_id, group):
+    async def getPlannerParams(self, planner_id:str, group;str)->GetPlannerParams.Response:
         """
         Makes an asynchronous call to the getPlannerParams service through the get_planner_params client.
         This retrieves the parametrization of the planner corresponding to a planner config and planning group.
@@ -472,7 +473,7 @@ class MoveGroupInterface():
             group (str) : Group of joints on which this planner is operating.
 
         Returns:
-            response (moveit_msgs/PlannerParams) : Parameters as key-value pairs.
+            response (moveit_msgs.srv.GetPlannerParams.Response) : Parameters as key-value pairs.
 
         """
         request = GetPlannerParams()
@@ -482,7 +483,7 @@ class MoveGroupInterface():
         response = await self.get_params_service_.call_async(request)
         return response
 
-    def setPlanningPipelineID(self, pipeline_id):
+    def setPlanningPipelineID(self, pipeline_id:str):
         """
         Set the name of the planning pipeline to use. If not specified, the configured planning pipeline is used.
 
@@ -498,7 +499,7 @@ class MoveGroupInterface():
         else:
             self.logger_.error("Attempt to set planning_pipeline_id to invalid type")
 
-    def getPlanningPipelineID(self):
+    def getPlanningPipelineID(self)->str:
         """
         Get the name of the planning pipeline to use. If not specified, the configured planning pipeline is used.
 
@@ -509,7 +510,7 @@ class MoveGroupInterface():
         
         return self.planning_pipeline_id_
     
-    def setReplanAttempts(self, n):
+    def setReplanAttempts(self, n:int):
         """
         Sets the maximum number of replan attempts, in case the plan becomes invalidated during execution.
 
@@ -522,7 +523,7 @@ class MoveGroupInterface():
         else:
             self.logger_.error("Attempt to set replan_attempts to invalid type")
 
-    def getReplanAttempt(self):
+    def getReplanAttempt(self)->int:
         """
         Gets the maximum number of replan attempts, in case the plan becomes invalidated during execution.
 
@@ -533,7 +534,7 @@ class MoveGroupInterface():
 
         return self.replan_attempts_
     
-    def setReplanDelay(self, n):
+    def setReplanDelay(self, n:float):
         """
         Sets the amount of time to wait between replanning attempts.
 
@@ -546,7 +547,7 @@ class MoveGroupInterface():
         else:
             self.logger_.error("Attempt to set replan_delay to invalid type")
 
-    def getReplanDelay(self):
+    def getReplanDelay(self)->float:
         """
         Gets the amount of time to wait between replanning attempts.
 
@@ -556,7 +557,7 @@ class MoveGroupInterface():
         """
         return self.replan_delay_
 
-    def setStartState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
+    def setStartState(self, joint_values:JointState, mdof_joint_values:Optional[MultiDOFJointState]=None, attached_objects:Optional[AttachedCollisionObject]=None, is_diff:Optional[bool] = None):
         """
         Sets the robot's start state in the motion plan.
 
@@ -570,7 +571,7 @@ class MoveGroupInterface():
         
         self.start_state_ = self.jointsToRobotState(joint_values, mdof_joint_values, attached_objects, is_diff)
 
-    def setWorkspaceParamaters(self, minx, maxx, miny, maxy, minz, maxz, frame=None):
+    def setWorkspaceParamaters(self, minx:float, maxx:float, miny:float, maxy:float, minz:float, maxz:float, frame:Optional[str]=None):
         """
         Sets the cuboidal workspace within which the robot is allowed to move.
 
@@ -1137,7 +1138,7 @@ class MoveGroupInterface():
                     self.current_state_.velocity.append(msg.velocity[i])
                     self.current_state_.effort.append(msg.effort[i])
 
-    def jointsToRobotState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
+    def jointsToRobotState(self, joint_values:JointState, mdof_joint_values:Optional[MultiDOFJointState]=None, attached_objects:Optional[AttachedCollisionObject]=None, is_diff:Optional[bool] = None):
         """
         Convert a JointState message to a RobotState message. 
 
@@ -1148,6 +1149,7 @@ class MoveGroupInterface():
             is_diff (bool) : Flag indicating whether this scene is to be interpreted as a diff with respect to some other scene.
 
         """
+        
         RS = RobotState()
         RS.joint_state = joint_values
         if(not(mdof_joint_values is None)):
