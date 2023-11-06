@@ -585,14 +585,11 @@ class MoveGroupInterface():
             frame (str) : frame in which workspace is defined. Defaults to base_link_.
 
         """
-
-        if((isinstance(minx, int) or isinstance(minx, float) ) and
-           (isinstance(miny, int) or isinstance(miny, float) ) and
-           (isinstance(minz, int) or isinstance(minz, float) ) and
-           (isinstance(maxx, int) or isinstance(maxx, float) ) and
-           (isinstance(maxy, int) or isinstance(maxy, float) ) and
-           (isinstance(maxz, int) or isinstance(maxz, float) )):
-
+        
+        for value in [minx,miny,minz,maxx,maxy,maxz]:
+            if not (isinstance(value, int) or isinstance(value, float) ):
+                break
+        else: 
             if(frame is None):
                 frame = self.base_link_
 
@@ -607,8 +604,10 @@ class MoveGroupInterface():
             self.workspace_parameters_.max_corner.x = maxx
             self.workspace_parameters_.max_corner.y = maxy
             self.workspace_parameters_.max_corner.z = maxz
-        else:
-            self.logger_().error("Attempt to set workspace parameter coordinate to invalid type")
+            return 
+
+        # Case of any input is not the right type
+        self.logger_().error("Attempt to set workspace parameter coordinate to invalid type")
     
     """
 
