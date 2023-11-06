@@ -1,3 +1,34 @@
+"""
+Set up arena and brick markers and moves brick.
+
+Publishers:
+  + planning_scene (moveit_msgs/msg/PlanningScene) - Publish objects to planning scene
+
+Subscribers:
+  + joint_states (sensor_msgs/msg/JointState) - Robot joint angles
+
+Action Clients:
+  + move_action (moveit_msgs/action/MoveGroup) - Compute motion plans
+  + execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - Execute motion plans
+  + panda_gripper/gripper_action (control_msgs/action/GripperCommand) - Actuate grippers
+
+Services:
+  + place_box (moveit_interfaces/srv/PlaceBox) - Place a box into the planning scene
+  + plan (moveit_interfaces/srv/Plan) - Create a motion plan
+  + execute (std_srvs/srv/Empty) - Execute a previously calculated motion plan
+  + gripper (std_srvs/srv/SetBool) - Open/close the gripper
+
+Service Clients:
+  + compute_ik (moveit_msgs/srv/GetPositionIK) - Compute IK for robot
+  + get_planning_scene (moveit_msgs/srv/GetPlanningScene) - Retrieve the planning scene
+
+Parameters
+----------
+  + base_frame_id (string) - Name of base frame
+  + end_effector_link (string) - Name of end effector link
+  + group_name (string) - Group name for motion planning
+
+"""
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -45,9 +76,9 @@ class MoveitAPI(Node):
         # Create services to generate motion plan, execute motion plan,
         # place box, and open/close grippers
         self.plan = self.create_service(
-            Plan, "plan", self.generate_motion_plan, callback_group=self.cbgroup)
+            Plan, "plan", self.plan_callback, callback_group=self.cbgroup)
         self.execute = self.create_service(
-            Empty, "execute", self.execute_trajectory, callback_group=self.cbgroup)
+            Empty, "execute", self.execute_callback, callback_group=self.cbgroup)
         self.place_box = self.create_service(
             PlaceBox, "place_box", self.place_box_callback, callback_group=self.cbgroup)
         self.move_gripper = self.create_service(
@@ -165,6 +196,27 @@ class MoveitAPI(Node):
 
         return get_pos_ik_req
 
+    async def compute_ik(self, pose):
+        """
+        Compute the inverse kinematic for a given end effector pose.
+
+        Args
+        ----
+            pose (geometry_msgs/Pose): The goal pose for the end effector
+
+        Returns
+        -------
+           A GetPositionIK Response object
+
+        """
+        # Build the IK Request
+        get_pos_ik_req = self.build_ik_request(pose)
+
+        # Call the IK service
+        ik_response = await self.ik_client.call_async(get_pos_ik_req)
+
+        return ik_response
+
     async def build_plan_request(self, start_state, goal_pose, plan_mode, plan_only=True):
         """
         Build a path planning request.
@@ -249,28 +301,7 @@ class MoveitAPI(Node):
 
         return plan_request
 
-    async def compute_ik(self, pose):
-        """
-        Compute the inverse kinematic for a given end effector pose.
-
-        Args
-        ----
-            pose (geometry_msgs/Pose): The goal pose for the end effector
-
-        Returns
-        -------
-           A GetPositionIK Response object
-
-        """
-        # Build the IK Request
-        get_pos_ik_req = self.build_ik_request(pose)
-
-        # Call the IK service
-        ik_response = await self.ik_client.call_async(get_pos_ik_req)
-
-        return ik_response
-
-    async def generate_motion_plan(self, request, response):
+    async def plan_callback(self, request, response):
         """
         Generate a motion plan for the robot.
 
@@ -315,7 +346,7 @@ class MoveitAPI(Node):
 
         return response
 
-    async def execute_trajectory(self, request, response):
+    async def execute_callback(self, request, response):
         """
         Execute a previously computed motion plan.
 
