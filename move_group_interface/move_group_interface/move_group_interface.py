@@ -54,12 +54,12 @@ class MoveGroupInterface():
 
     SERVICE CLIENTS:
         compute_cartesian_path (moveit_msgs/srv/GetCartesianPath) - Computes a joint-space trajectory, given end-effector waypoints.
-        compute_fk (moveit_msgs/srv/GetPositionFK) - 
-        compute_ik (moveit_msgs/srv/GetPositionIK) - TODO
-        get_planner_params (moveit_msgs/srv/GetPlannerParams) - TODO
-        get_planning_scene (moveit_msgs/srv/GetPlanningScene) - TODO
-        query_planner_interface (moveit_msgs/srv/QueryPlannerInterfaces) - TODO
-        set_planner_params (moveit_msgs/srv/SetPlannerParams) - TODO
+        compute_fk (moveit_msgs/srv/GetPositionFK) - Computes Forward Kinematics.
+        compute_ik (moveit_msgs/srv/GetPositionIK) - Computes Inverse Kinematics.
+        get_planner_params (moveit_msgs/srv/GetPlannerParams) - Gets the parametrization of the planner corresponding to a planner config and planning group.
+        get_planning_scene (moveit_msgs/srv/GetPlanningScene) - Gets parts of the planninng scene that are of interest.
+        query_planner_interface (moveit_msgs/srv/QueryPlannerInterfaces) - Gives a description of the planner interface.
+        set_planner_params (moveit_msgs/srv/SetPlannerParams) - Parameterizes the planner, and sets its config and group.
 
     """
 
@@ -72,8 +72,8 @@ class MoveGroupInterface():
             node (rclpy/Node) : Motion planning node.
             robotModel (RobotModel) : Model of the robot.
             tf_buffer (TO DO) : 
-            namespace (str) : TODO
-            wait_for_servers (float) : TODO
+            namespace (str) : namespace of the node.
+            wait_for_servers (float) : Time to wait for servers (seconds).
 
         """
 
@@ -1070,8 +1070,8 @@ class MoveGroupInterface():
             trajectory (moveit_msgs/RobotTrajectory) : If true, the action returns an executable plan in the response but does not attempt an execution.
 
         Returns:
-            result () : TODO
-            status () : TODO
+            result (TO DO) : result.
+            status (GoalStatus) : Indicates goal status.
 
         """
         goal = ExecuteTrajectory.Goal()
@@ -1159,8 +1159,8 @@ class MoveGroupInterface():
             clean (bool) : Flag specifiying whether to clean up (clear all constraints and set start to None) or not after planning.
 
         Returns:
-            result () : TODO
-            status () : TODO
+            result (TO DO) : result.
+            status (GoalStatus) : Indicates goal status.
 
         """
         if(not(eef_pose_stamped is None)):
