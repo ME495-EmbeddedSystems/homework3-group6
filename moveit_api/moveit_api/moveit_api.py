@@ -8,11 +8,13 @@ from sensor_msgs.msg import JointState
 from moveit_msgs.msg import PositionIKRequest, CollisionObject, PlanningScene, PlanningSceneComponents, MotionPlanRequest, Constraints, JointConstraint, PositionConstraint, OrientationConstraint, BoundingVolume, MoveItErrorCodes
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
+from control_msgs.action import GripperCommand
 from shape_msgs.msg import SolidPrimitive
 from rclpy.callback_groups import ReentrantCallbackGroup
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros.buffer import Buffer
 import copy
+import math
 from .quaternion import angle_axis_to_quaternion
 
 
@@ -23,23 +25,13 @@ class MoveitAPI(Node):
         super().__init__('moveit_api')
 
         # Declare and get Parameters
-        self.declare_parameter('namespace', '')
         self.declare_parameter('base_frame_id', 'panda_link0')
         self.declare_parameter('end_effector_link', 'panda_link8')
         self.declare_parameter('group_name', 'panda_manipulator')
-        self.declare_parameter('use_joint_constraints', False)
-        self.namespace = self.get_parameter('namespace').get_parameter_value().string_value
         self.base_frame_id = self.get_parameter('base_frame_id').get_parameter_value().string_value
         self.end_effector_link = self.get_parameter('end_effector_link').get_parameter_value().string_value
         self.group_name = self.get_parameter('group_name').get_parameter_value().string_value
-        self.use_joint_constraints = self.get_parameter('use_joint_constraints').get_parameter_value().bool_value
         self.joint_state_topic = 'joint_states'
-
-        # Append namespace to variables if necessary
-        if self.namespace != '':
-            self.joint_state_topic = self.namespace + '/' + self.joint_state_topic
-            self.base_frame_id = self.namespace + '/' + self.base_frame_id
-            self.end_effector_link = self.namespace + '/' + self.end_effector_link
 
         # Create Reentrant Callback Group
         self.cbgroup = ReentrantCallbackGroup()
@@ -63,6 +55,9 @@ class MoveitAPI(Node):
 
         # Create action client to execute motion plans
         self.execute_client = ActionClient(self, ExecuteTrajectory, "execute_trajectory")
+
+        # Create action client to open/close the Panda's grippers
+        self.gripper_client = ActionClient(self, GripperCommand, "panda_gripper/gripper_action")
 
         # Planning scene service client and publisher
         self.scene_client = self.create_client(GetPlanningScene, "get_planning_scene")
@@ -130,22 +125,10 @@ class MoveitAPI(Node):
         -------
            A GetPositionIK Request object
 
-        """
-        joint_state_msg = copy.deepcopy(self.joint_state_msg)
-        try:
-            del joint_state_msg.position[joint_state_msg.name.index('left_finger')]
-            joint_state_msg.name.remove('left_finger')
-        except:
-            pass
-        try:
-            del joint_state_msg.position[joint_state_msg.name.index('right_finger')]
-            joint_state_msg.name.remove('right_finger')
-        except:
-            pass
-        
+        """ 
         pos_ik_req = PositionIKRequest()
         pos_ik_req.group_name = self.group_name
-        pos_ik_req.robot_state.joint_state = joint_state_msg
+        pos_ik_req.robot_state.joint_state = self.joint_state_msg
         pos_ik_req.pose_stamped.header.frame_id = self.base_frame_id
         pos_ik_req.pose_stamped.header.stamp = self.get_clock().now().to_msg()
         pos_ik_req.pose_stamped.pose.position.x = pose.position.x
@@ -162,6 +145,8 @@ class MoveitAPI(Node):
 
         get_pos_ik_req = GetPositionIK.Request()
         get_pos_ik_req.ik_request = pos_ik_req
+
+        self.get_logger().info(str(pos_ik_req))
 
         return get_pos_ik_req
     
@@ -186,67 +171,41 @@ class MoveitAPI(Node):
         """
         # Create Constraints
         goal_constraints = Constraints()
-        
-        if self.use_joint_constraints is False:
-            if plan_mode == 0 or plan_mode == 2:
+    
+        if plan_mode == 0 or plan_mode == 2:
 
-                solid_primitive = SolidPrimitive()
-                solid_primitive.type = 1
-                solid_primitive.dimensions = [2e-3, 2e-3, 2e-3]
+            solid_primitive = SolidPrimitive()
+            solid_primitive.type = 1
+            solid_primitive.dimensions = [2e-3, 2e-3, 2e-3]
 
-                pose = Pose()
-                pose.position.x = goal_pose.position.x
-                pose.position.y = goal_pose.position.y
-                pose.position.z = goal_pose.position.z
+            pose = Pose()
+            pose.position.x = goal_pose.position.x
+            pose.position.y = goal_pose.position.y
+            pose.position.z = goal_pose.position.z
 
-                BV = BoundingVolume()
-                BV.primitives =  [solid_primitive]
-                BV.primitive_poses = [pose]
+            BV = BoundingVolume()
+            BV.primitives =  [solid_primitive]
+            BV.primitive_poses = [pose]
 
-                position_constraint = PositionConstraint()
-                position_constraint.header.frame_id = self.base_frame_id
-                position_constraint.link_name = self.end_effector_link
-                position_constraint.constraint_region = BV
-                position_constraint.weight = 1.0
+            position_constraint = PositionConstraint()
+            position_constraint.header.frame_id = self.base_frame_id
+            position_constraint.link_name = self.end_effector_link
+            position_constraint.constraint_region = BV
+            position_constraint.weight = 1.0
 
-                goal_constraints.position_constraints.append(position_constraint)
+            goal_constraints.position_constraints.append(position_constraint)
 
-            if plan_mode == 1 or plan_mode == 2:
-                orientation_constraint = OrientationConstraint()
-                orientation_constraint.header.frame_id = self.base_frame_id
-                orientation_constraint.link_name = self.end_effector_link
-                orientation_constraint.orientation = goal_pose.orientation
-                orientation_constraint.absolute_x_axis_tolerance = 1e-3
-                orientation_constraint.absolute_y_axis_tolerance = 1e-3
-                orientation_constraint.absolute_z_axis_tolerance = 1e-3
-                orientation_constraint.weight = 1.0
+        if plan_mode == 1 or plan_mode == 2:
+            orientation_constraint = OrientationConstraint()
+            orientation_constraint.header.frame_id = self.base_frame_id
+            orientation_constraint.link_name = self.end_effector_link
+            orientation_constraint.orientation = goal_pose.orientation
+            orientation_constraint.absolute_x_axis_tolerance = 1e-3
+            orientation_constraint.absolute_y_axis_tolerance = 1e-3
+            orientation_constraint.absolute_z_axis_tolerance = 1e-3
+            orientation_constraint.weight = 1.0
 
-                goal_constraints.orientation_constraints.append(orientation_constraint)
-        
-        else:
-            # Set the goal pose to be the position passed in to the function, but use the current orientation of the end effector
-            base_ee_tf = await self.tf_buffer.lookup_transform_async(self.base_frame_id, self.end_effector_link, rclpy.time.Time())
-
-            new_goal_pose = Pose()
-            new_goal_pose.position = goal_pose.position
-            new_goal_pose.orientation = base_ee_tf.transform.rotation
-
-            # Compute the joint angles to reach the new goal pose
-            ik_srv_response = await self.compute_ik(new_goal_pose)
-            goal_joint_state = ik_srv_response.solution.joint_state
-
-            move_group_joints = ['waist', 'shoulder', 'elbow','wrist_angle','gripper']
-
-            for i in range(len(goal_joint_state.name)):
-                if goal_joint_state.name[i] in move_group_joints:
-                    joint_constraint = JointConstraint()
-                    joint_constraint.joint_name = goal_joint_state.name[i]
-                    joint_constraint.position = goal_joint_state.position[i]
-                    joint_constraint.tolerance_above = 1e-4
-                    joint_constraint.tolerance_below = 1e-4
-                    joint_constraint.weight = 1.0
-
-                    goal_constraints.joint_constraints.append(joint_constraint)
+            goal_constraints.orientation_constraints.append(orientation_constraint)
 
         # Create Motion Plan Request
         req = MotionPlanRequest()
@@ -273,82 +232,6 @@ class MoveitAPI(Node):
         plan_request.planning_options.plan_only = plan_only
 
         return plan_request
-    
-    def build_gripper_request(self, gripper_group, open):
-        """
-        Builds a gripper planning request.
-
-        Args
-        ----
-            gripper_group (string): The group name for the gripper
-
-            open (bool): Determines whether to open or close the gripper (True = open, False = close)
-
-        Returns
-        -------
-           A MoveGroup Goal object
-
-        """
-        # Create Constraints
-        goal_constraints = Constraints()
-        
-        fingers = ['left_finger', 'right_finger']
-
-        for finger in fingers:
-            joint_constraint = JointConstraint()
-            joint_constraint.joint_name = finger
-            joint_constraint.tolerance_above = 1e-4
-            joint_constraint.tolerance_below = 1e-4
-            joint_constraint.weight = 1.0
-
-            if open == True:
-                if finger == 'left_finger':
-                    joint_constraint.position = 0.03
-                if finger == 'right_finger':
-                    joint_constraint.position = -0.03
-            else:
-                if finger == 'left_finger':
-                    joint_constraint.position = 0.02
-                if finger == 'right_finger':
-                    joint_constraint.position = -0.02
-                
-            goal_constraints.joint_constraints.append(joint_constraint)
-
-        # Create JointState for current gripper position
-        # gripper_val = self.joint_state_msg.position[self.joint_state_msg.name.index('left_finger')]
-        if open == True:
-            gripper_val = 0.2
-        else:
-            gripper_val = 0.03
-        current_gripper_state = JointState()
-        current_gripper_state.name = fingers
-        current_gripper_state.position = [gripper_val, -gripper_val]
-
-        # Create Motion Plan Request
-        req = MotionPlanRequest()
-        req.workspace_parameters.header.stamp = self.get_clock().now().to_msg()
-        req.workspace_parameters.min_corner.x = -1.0
-        req.workspace_parameters.min_corner.y = -1.0
-        req.workspace_parameters.min_corner.z = -1.0
-        req.workspace_parameters.max_corner.x = 1.0
-        req.workspace_parameters.max_corner.y = 1.0
-        req.workspace_parameters.max_corner.z = 1.0
-        req.workspace_parameters.header.frame_id = self.base_frame_id
-        req.start_state.joint_state = current_gripper_state
-        req.goal_constraints = [goal_constraints]
-        req.pipeline_id = 'move_group'
-        req.group_name = gripper_group
-        req.num_planning_attempts = 1
-        req.allowed_planning_time = 5.0
-        req.max_velocity_scaling_factor = 0.1
-        req.max_acceleration_scaling_factor = 0.1
-
-        # Create MoveGroup Goal
-        gripper_request = MoveGroup.Goal()
-        gripper_request.request = req
-        gripper_request.planning_options.plan_only = False
-
-        return gripper_request
     
     async def compute_ik(self, pose):
         """
@@ -440,30 +323,39 @@ class MoveitAPI(Node):
         return response
 
     async def gripper_callback(self, request, response):
-            """
-            Opens or closes the gripper of the Interbotix arm.
+        """
+        Opens or closes the gripper of the Interbotix arm.
 
-            Args
-            ----
-                request (SetBoolRequest): A SetBool Request
+        Args
+        ----
+            request (SetBoolRequest): A SetBool Request
 
-            Returns
-            -------
-            A SetBool Response object
+        Returns
+        -------
+        A SetBool Response object
 
-            """
+        """
+        open = request.data
 
-            # Create the MoveGroup Goal
-            gripper_req = self.build_gripper_request('interbotix_gripper', open=request.data)
+        # Create the GripperCommand Goal
+        gripper_request = GripperCommand.Goal()
 
-            # Call the move action client
-            future_response = await self.plan_client.send_goal_async(gripper_req)
-            plan_response = await future_response.get_result_async()
-            self.motion_plan = plan_response
+        if open == False:
+            self.get_logger().info("Closing Gripper")
+            gripper_request.command.position = 0.025
+            gripper_request.command.max_effort = 10.0
+        else:
+            self.get_logger().info("Opening Gripper")
+            gripper_request.command.position = 0.035
 
-            response.success = True
+        # Call the move action client
+        future_response = await self.gripper_client.send_goal_async(gripper_request)
+        plan_response = await future_response.get_result_async()
+        self.motion_plan = plan_response
 
-            return response
+        response.success = True
+
+        return response
 
     def joint_state_callback(self, msg):
         """

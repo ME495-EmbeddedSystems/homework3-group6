@@ -1,7 +1,5 @@
 /moveit_api:
   ros__parameters:
-    namespace: 'px100'
     base_frame_id: 'base_link'
     end_effector_link: 'ee_arm_link'
     group_name: 'interbotix_arm'
-    use_joint_constraints: True
