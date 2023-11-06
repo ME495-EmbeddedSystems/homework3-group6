@@ -22,12 +22,12 @@ class RobotModel():
         Initialize robot model.
 
         Args:
-            group_name (str) : TODO
-            joint_names (str[]) : TODO
-            default_end _effector (str) : TODO
-            default_base_link (str) : TODO
-            robot_namespace (str) : TODO
-            robot_description (str) : TODO
+            group_name (str) : The name of the move_group contantaing the joints
+            joint_names (str[]) : The list of joints in the move_group
+            default_end _effector (str) : A default end effector link (optional)
+            default_base_link (str) : A default base link (optional)
+            robot_namespace (str) : Robot namespace affecting /joint_states publishing (optional)
+            robot_description (str) : A robot description topic (optional, unused)
 
         """
 
@@ -71,9 +71,9 @@ class MoveGroupInterface():
         Args:
             node (rclpy/Node) : Motion planning node.
             robotModel (RobotModel) : Model of the robot.
-            tf_buffer (TO DO) : 
-            namespace (str) : namespace of the node.
-            wait_for_servers (float) : Time to wait for servers (seconds).
+            tf_buffer (tf2_ros.buffer) : Transform buffer (optional, unused)
+            namespace (str) : namespace of the move_group node. Used to identify actions and services.
+            wait_for_servers (float) : Time to wait for servers (seconds). Defaults to 3.0 seconds
 
         """
 
@@ -655,6 +655,7 @@ class MoveGroupInterface():
             tol_a_array (float[]) : Array of upper bounds of joint_states.
             tol_b_array (float[]) : Array of lower bound of joint_states.
             weight_array (float[]) : Array denoting relative importance to other constraints. Closer to zero means less important.
+                                     If set to a scalar, assumes same value for all givens.
         """
         for i in range(len(joint_states.name)):
             if(tol_a_array is None):
@@ -811,6 +812,7 @@ class MoveGroupInterface():
             lin_tol_array (float[]) : Array of position tolerances (m).
             ang_tol_array (float[]) : Array of orientation tolerances (rad).
             weight_array (float[]) : Array denoting relative importance to other constraints. Closer to zero means less important.
+                                     If set to a scalar, assumes same value for all givens.
         """
         for i in range(len(pose_stamped_array)):
             if(lin_tol_array is None):
@@ -1070,7 +1072,7 @@ class MoveGroupInterface():
             trajectory (moveit_msgs/RobotTrajectory) : If true, the action returns an executable plan in the response but does not attempt an execution.
 
         Returns:
-            result (TO DO) : result.
+            result (ExecuteTrajectory.Result) : result of the execute trajectory action.
             status (GoalStatus) : Indicates goal status.
 
         """
@@ -1095,6 +1097,7 @@ class MoveGroupInterface():
     async def getPlanningScene(self, components=PlanningSceneComponents()):
         """
         Gets parts of the planning scene by calling the GetPlanningScene service through the get_planning_scene client.
+
         All scene components are returned if none are specified.
 
         Args:
@@ -1110,7 +1113,9 @@ class MoveGroupInterface():
     def jointStateCallback(self, msg):
         """
         Callback function for subscriber to topic joint_states.
-        Updates current state of joints. 
+    
+        Updates current state of joints.
+        Whitelisted to only allow joints passed in the RobotModel.
 
         Args:
             msg (sensor_msgs/JointState) : Timestamped state of joints.
@@ -1129,7 +1134,7 @@ class MoveGroupInterface():
 
     def jointsToRobotState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
         """
-        Sets the robot's state.
+        Convert a JointState message to a RobotState message. 
 
         Args:
             joint_values (sensor_msgs/JointState) : Single-dof joint states of the robot.
@@ -1150,7 +1155,7 @@ class MoveGroupInterface():
 
     async def makeMotionPlanRequest(self, plan_only=True, start_state = None, eef_pose_stamped=None, clean=True):
         """
-        Makes a motion plan request to the MoveGroup action through the move_action client.
+        Make a motion plan request to the MoveGroup action through the move_action client.
 
         Args:
             plan_only (bool) : If true, the action returns an executable plan in the response but does not attempt an execution.
@@ -1159,7 +1164,7 @@ class MoveGroupInterface():
             clean (bool) : Flag specifiying whether to clean up (clear all constraints and set start to None) or not after planning.
 
         Returns:
-            result (TO DO) : result.
+            result (MoveGroup.Result) : Result of the MoveGroup action.
             status (GoalStatus) : Indicates goal status.
 
         """
@@ -1168,6 +1173,7 @@ class MoveGroupInterface():
             self.addOrientationConstraint(eef_pose_stamped)
 
         # If plan_only = False (executing trajectory right after), MUST start at current state
+        # If given a start_state, will override the current start_state_.
         if((start_state is None and self.start_state_ is None) or not(plan_only)):
             self.setStartState(self.current_state_)
         elif(not(start_state is None)):
