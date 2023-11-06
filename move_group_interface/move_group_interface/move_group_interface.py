@@ -40,21 +40,21 @@ class RobotModel():
 
 class MoveGroupInterface():
     """
-    TODO
+    A motion planning interface that uses MoveIt! services and actions to plan the path of an open-chain robot.
 
     PUBLISHES:
-        planning_scene (moveit_msgs/msg/PlanningScene) - TODO
+        planning_scene (moveit_msgs/msg/PlanningScene) - A specification of the robot, its state, and the objects it can collide with.
 
     SUBSCRIBES:
-        jointstates (sensor_msgs/msg/JointState) - TODO
+        jointstates (sensor_msgs/msg/JointState) - The (timestamped) joint positions of the robot.
 
     ACTION CLIENTS:
-        execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - TODO
-        move_action (moveit_msgs/action/MoveGroup) - TODO
+        execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - Executes a joint-space trajectory.
+        move_action (moveit_msgs/action/MoveGroup) - Plans / plans and executes the robot's trajectory.
 
     SERVICE CLIENTS:
-        compute_cartesian_path (moveit_msgs/srv/GetCartesianPath) - TODO
-        compute_fk (moveit_msgs/srv/GetPositionFK) - TODO
+        compute_cartesian_path (moveit_msgs/srv/GetCartesianPath) - Computes a joint-space trajectory, given end-effector waypoints.
+        compute_fk (moveit_msgs/srv/GetPositionFK) - 
         compute_ik (moveit_msgs/srv/GetPositionIK) - TODO
         get_planner_params (moveit_msgs/srv/GetPlannerParams) - TODO
         get_planning_scene (moveit_msgs/srv/GetPlanningScene) - TODO
@@ -66,12 +66,12 @@ class MoveGroupInterface():
     def __init__(self, node, robotModel, tf_buffer=None, namespace="", wait_for_servers=3.0):
 
         """
-        TODO
+        Initializes the motion planning interface.
 
         Args:
-            node (rclpy/Node) : TODO
-            robotModel (RobotModel) : TODO
-            tf_buffer (TODO) : TODO
+            node (rclpy/Node) : Motion planning node.
+            robotModel (RobotModel) : Model of the robot.
+            tf_buffer (TO DO) : 
             namespace (str) : TODO
             wait_for_servers (float) : TODO
 
@@ -925,6 +925,7 @@ class MoveGroupInterface():
         Args:
             shape (shape_msgs/SolidPrimitive[]) : Shapes that the body consists of.
             pose_stamped (geometry_msgs/Pose[]) : Respective poses of these shapes.
+
         """
         scene = await self.getPlanningScene()
         
@@ -1020,6 +1021,7 @@ class MoveGroupInterface():
 
         Returns:
             request (moveit_msgs/MotionPlanRequest) : Motion plan request from the path planner's members.
+
         """
         request = MotionPlanRequest()
         request.group_name = self.group_name_
@@ -1048,7 +1050,8 @@ class MoveGroupInterface():
             plan_only (bool) : If true, the action returns an executable plan in the response but does not attempt an execution.
 
         Returns:
-            options (moveit_msgs/MotionPlanReq) : Planning options message.
+            options (moveit_msgs/PlanningOptions) : Planning options message.
+
         """
         options = PlanningOptions()
         options.plan_only = plan_only
@@ -1060,6 +1063,17 @@ class MoveGroupInterface():
         return options
     
     async def executeTrajectory(self, trajectory):
+        """
+        Executes a given joint-space robot trajectory, by calling the ExecuteTrajectory action through the execute_trajectory client.
+
+        Args:
+            trajectory (moveit_msgs/RobotTrajectory) : If true, the action returns an executable plan in the response but does not attempt an execution.
+
+        Returns:
+            result () : TODO
+            status () : TODO
+
+        """
         goal = ExecuteTrajectory.Goal()
         goal.trajectory = trajectory
         goal_handle = await self.execute_action_client_.send_goal_async(goal)
@@ -1079,10 +1093,29 @@ class MoveGroupInterface():
         return result, status
     
     async def getPlanningScene(self, components=PlanningSceneComponents()):
+        """
+        Gets parts of the planning scene by calling the GetPlanningScene service through the get_planning_scene client.
+        All scene components are returned if none are specified.
+
+        Args:
+            components (moveit_msgs/PlanningSceneComponents) : Components that make up the planning scene. Bitfield that specifies the parts of the planning scene that are of interest.
+
+        Returns:
+            scene (moveit_msgs/PlanningScene) : Planning scene.
+
+        """
         planning_scene = await self.planning_scene_service_.call_async(GetPlanningScene.Request(components=components))
         return planning_scene.scene
     
     def jointStateCallback(self, msg):
+        """
+        Callback function for subscriber to topic joint_states.
+        Updates current state of joints. 
+
+        Args:
+            msg (sensor_msgs/JointState) : Timestamped state of joints.
+
+        """
         self.current_state_ = JointState()
         self.current_state_.header = msg.header
 
@@ -1095,7 +1128,16 @@ class MoveGroupInterface():
                     self.current_state_.effort.append(msg.effort[i])
 
     def jointsToRobotState(self, joint_values, mdof_joint_values=None, attached_objects=None, is_diff = None):
-        
+        """
+        Sets the robot's state.
+
+        Args:
+            joint_values (sensor_msgs/JointState) : Single-dof joint states of the robot.
+            mdof_joint_values (sensor_msgs/MultiDOFJointState) : Multi-dof joint states of the robot.
+            attached_objects (moveit_msgs/AttachedCollisionObject[]) : Attached collision objects.
+            is_diff (bool) : Flag indicating whether this scene is to be interpreted as a diff with respect to some other scene.
+
+        """
         RS = RobotState()
         RS.joint_state = joint_values
         if(not(mdof_joint_values is None)):
@@ -1107,6 +1149,20 @@ class MoveGroupInterface():
         return RS
 
     async def makeMotionPlanRequest(self, plan_only=True, start_state = None, eef_pose_stamped=None, clean=True):
+        """
+        Makes a motion plan request to the MoveGroup action through the move_action client.
+
+        Args:
+            plan_only (bool) : If true, the action returns an executable plan in the response but does not attempt an execution.
+            start_state (moveit_msgs/RobotState) : A given start state, ideally given when only planning and not executing.
+            eef_pose_stamped (geometry_msgs/PoseStamped) : TimeStamped position of the end effector.
+            clean (bool) : Flag specifiying whether to clean up (clear all constraints and set start to None) or not after planning.
+
+        Returns:
+            result () : TODO
+            status () : TODO
+
+        """
         if(not(eef_pose_stamped is None)):
             self.addPositionConstraint(eef_pose_stamped)
             self.addOrientationConstraint(eef_pose_stamped)
