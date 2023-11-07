@@ -4,7 +4,7 @@ Authors:
 - Rohan Kota
 - Leo Chen
 - Zach Alves
-- Aditya Naie
+- Aditya Nair
 
 ## Setup
 
