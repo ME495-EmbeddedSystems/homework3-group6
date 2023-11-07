@@ -52,17 +52,16 @@ class RobotModel:
     robot_description (str) : A robot description topic (optional, unused)
     """
 
-    group_name: str
-    joint_names: list[str]
-    # Note: Original code below two are optional,
-    # I think they should be required.
-    default_end_effector: str
-    default_base_link: str
-    robot_namespace: str = ""
-    robot_description: str = "robot_description"
-
-
 class MoveGroupInterface:
+
+    group_name : str
+    joint_names : list[str]
+    default_end_effector : str = None
+    default_base_link:str = None
+    robot_namespace:str = ""
+    robot_description:str = "robot_description"
+
+class MoveGroupInterface():
     """
     A motion planning interface that uses MoveIt!.
 
@@ -171,9 +170,6 @@ class MoveGroupInterface:
         self.position_constraints_ = []
         self.orientation_constraints_ = []
         self.joint_constraints_ = []
-        self.visibility_constraints_ = (
-            []
-        )  # Add funcitonality for increasd quality submisison -- doesnt exist
 
         # PUBLISHERS
 
@@ -1501,9 +1497,6 @@ class MoveGroupInterface:
         self.constraints_.orientation_constraints =\
             self.orientation_constraints_
         self.constraints_.joint_constraints = self.joint_constraints_
-
-        # !!! Fix this function
-        # self.constraints_ = self.mergeJointConstraints()
         request.goal_constraints = [self.constraints_]
         return request
 
@@ -1670,9 +1663,9 @@ class MoveGroupInterface:
             status (GoalStatus) : Indicates goal status.
 
         """
-        if not (eef_pose_stamped is None):
-            self.addPositionConstraint(eef_pose_stamped)
-            self.addOrientationConstraint(eef_pose_stamped)
+
+        if(not(eef_pose_stamped is None)):
+            self.addPoseConsraint(eef_pose_stamped)
 
         # If plan_only = False (executing trajectory right after),
         # MUST start at current state
