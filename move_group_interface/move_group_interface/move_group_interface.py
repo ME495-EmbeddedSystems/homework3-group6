@@ -1663,8 +1663,8 @@ class MoveGroupInterface():
             status (GoalStatus) : Indicates goal status.
 
         """
-        if(not(eef_pose_stamped is None)):
-            self.addPoseConsraint(eef_pose_stamped)
+        if (not (eef_pose_stamped is None)):
+            self.addPoseConstraint(eef_pose_stamped)
 
         # If plan_only = False (executing trajectory right after),
         # MUST start at current state
