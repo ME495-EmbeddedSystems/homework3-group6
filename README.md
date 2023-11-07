@@ -8,8 +8,11 @@ Authors:
 
 ## Setup
 
-1. Ensure that the move_group_interface package is built and sourced. Code examples can be see in the `move_group_test` node.
-2. Import the `RobotModel` and`MoveGroupInterface`. 
+1. Ensure that the move_group_interface package is built and sourced. Code examples can be seen in the `move_group_test` node.
+   The `move_group_test` node runs with the franka panda robotic arm. After running the node, three services will be available provided that the franka_moveit_config is also running. 
+   `/place_box`, `/plan_trajectory`, `/exec_trajectory`. The first places a box in the planning scene, the second plans a path but does not move the robot and the third moves the robot along the planned trajetory.
+
+3. Import the `RobotModel` and`MoveGroupInterface`. 
  - The `RobotModel` contains details about which joints should be moved.
     - The group name and associated joints must be specified.
     - Optionally, a default end effector and base link can be specificed
@@ -18,17 +21,13 @@ Authors:
     - Upon creation, a RobotModel and a Node must be passed. The node is used to create clients and subscriptions.
     - Optionally, a namespace for move_group can be specified
     - Optionally, a time to wait for service can be specified. The default is 3 seconds.
-    An 
 
-3. There are two required parameters to set before motion planning. The `Workspace` and the `planning_pipeline_id`. An example of code is shown below.
-    ```
-    self.API.setWorkspaceParamaters(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0)
-    self.API.setPlanningPipelineID("move_group")
-    ```
+3. There are two required parameters to set before motion planning. The `Workspace` and the `planning_pipeline_id`.
+   This can be accomplished with the `setWorkspaceParamaters` and `setPlanningPipelineID` functions.
     - The Workspace determines in what region the robot can plan in. 
         - The region is cube specified by the diagonal corners.
         - If no frame_id is specified in the call and a default base link was specified, it will assume the base link is the proper frame.
-4. The API is now set up and can be used to make motion plan requests. There are a variety of other parameters that can be set. 
+5. The API is now set up and can be used to make motion plan requests. There are a variety of other parameters that can be set. 
     These parameters are shown below, along with their default values.
     ```
     - planning_pipeline_id_ = "" 
