@@ -38,9 +38,8 @@ class RobotModel():
     """
     group_name : str
     joint_names : list[str]
-    # Note: Original code below two are optional, I think they should be required. 
-    default_end_effector : str
-    default_base_link:str 
+    default_end_effector : str = None
+    default_base_link:str = None
     robot_namespace:str = ""
     robot_description:str = "robot_description"
 
@@ -132,7 +131,6 @@ class MoveGroupInterface():
         self.position_constraints_ = []
         self.orientation_constraints_ = []
         self.joint_constraints_ = []
-        self.visibility_constraints_ = [] # Add funcitonality for increasd quality submisison -- doesnt exist rn
 
         # PUBLISHERS
 
@@ -1044,9 +1042,6 @@ class MoveGroupInterface():
         self.constraints_.position_constraints = self.position_constraints_
         self.constraints_.orientation_constraints = self.orientation_constraints_
         self.constraints_.joint_constraints = self.joint_constraints_
-
-        # !!! Fix this function 
-        #self.constraints_ = self.mergeJointConstraints()
         request.goal_constraints = [self.constraints_]
         return request
     
@@ -1176,8 +1171,7 @@ class MoveGroupInterface():
 
         """
         if(not(eef_pose_stamped is None)):
-            self.addPositionConstraint(eef_pose_stamped)
-            self.addOrientationConstraint(eef_pose_stamped)
+            self.addPoseConsraint(eef_pose_stamped)
 
         # If plan_only = False (executing trajectory right after), MUST start at current state
         # If given a start_state, will override the current start_state_.
