@@ -63,13 +63,6 @@ class move_group_test(Node):
             self.create_service(Empty, "exec_trajectory",
                                 self.exec_trajectory_callback)
 
-        self.tmr = self.create_timer(0.01, self.timer_callback)
-
-    async def timer_callback(self):
-        self.tmr.cancel()
-        self.get_logger().debug("Not crashing!")
-        res, stat = await self.API.makeMotionPlanRequest()
-
     async def place_box_callback(self, request, response):
         await self.API.addCollisionObject(self.box, self.box_pose)
         return response

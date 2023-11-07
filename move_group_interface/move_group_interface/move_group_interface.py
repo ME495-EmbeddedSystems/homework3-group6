@@ -50,16 +50,16 @@ class RobotModel:
     robot_namespace (str) : Robot namespace affecting
         joint_states publishing (optional)
     robot_description (str) : A robot description topic (optional, unused)
+
     """
 
-class MoveGroupInterface:
+    group_name: str
+    joint_names: list[str]
+    default_end_effector: str = None
+    default_base_link: str = None
+    robot_namespace: str = ""
+    robot_description: str = "robot_description"
 
-    group_name : str
-    joint_names : list[str]
-    default_end_effector : str = None
-    default_base_link:str = None
-    robot_namespace:str = ""
-    robot_description:str = "robot_description"
 
 class MoveGroupInterface():
     """
@@ -1663,7 +1663,6 @@ class MoveGroupInterface():
             status (GoalStatus) : Indicates goal status.
 
         """
-
         if(not(eef_pose_stamped is None)):
             self.addPoseConsraint(eef_pose_stamped)
 
