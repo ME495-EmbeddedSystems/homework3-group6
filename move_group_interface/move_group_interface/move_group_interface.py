@@ -561,7 +561,7 @@ class MoveGroupInterface():
                 from 0.01 to 1.
 
         """
-        if isinstance(n) or isinstance(n, int):
+        if isinstance(n, float) or isinstance(n, int):
             if n >= 0.01:
                 if n > 1.0:
                     self.logger_.info(
