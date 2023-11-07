@@ -1,29 +1,43 @@
 import dataclasses
 from typing import Optional
-import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Pose, PoseStamped
-from moveit_msgs.action import ExecuteTrajectory, MoveGroup, MoveGroupSequence
-from moveit_msgs.msg import (BoundingVolume, CollisionObject, Constraints,
-                             JointConstraint, MotionPlanRequest,
-                             MotionSequenceItem, MotionSequenceRequest,
-                             OrientationConstraint, PlannerParams,
-                             PlanningOptions, PlanningScene,
-                             PlanningSceneComponents, PositionConstraint,
-                             PositionIKRequest, RobotState, RobotTrajectory,
-                             WorkspaceParameters , AttachedCollisionObject,MoveItErrorCodes)
-from moveit_msgs.srv import (GetCartesianPath, GetPlannerParams,
-                             GetPlanningScene, GetPositionFK, GetPositionIK,
-                             QueryPlannerInterfaces, SetPlannerParams)
+from moveit_msgs.action import ExecuteTrajectory, MoveGroup
+from moveit_msgs.msg import (
+    BoundingVolume,
+    CollisionObject,
+    Constraints,
+    JointConstraint,
+    MotionPlanRequest,
+    OrientationConstraint,
+    PlannerParams,
+    PlanningOptions,
+    PlanningScene,
+    PlanningSceneComponents,
+    PositionConstraint,
+    RobotState,
+    WorkspaceParameters,
+    AttachedCollisionObject,
+    MoveItErrorCodes,
+)
+from moveit_msgs.srv import (
+    GetCartesianPath,
+    GetPlannerParams,
+    GetPlanningScene,
+    GetPositionFK,
+    GetPositionIK,
+    QueryPlannerInterfaces,
+    SetPlannerParams,
+)
 from rclpy.action import ActionClient
-from rclpy.callback_groups import (MutuallyExclusiveCallbackGroup,
-                                   ReentrantCallbackGroup)
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from sensor_msgs.msg import JointState, MultiDOFJointState
 from shape_msgs.msg import SolidPrimitive
 
+
 @dataclasses.dataclass
-class RobotModel():
+class RobotModel:
     """
     Model of an open-chain robot.
 
@@ -33,16 +47,19 @@ class RobotModel():
     joint_names (str[]) : The list of joints in the move_group
     default_end _effector (str) : A default end effector link (optional)
     default_base_link (str) : A default base link (optional)
-    robot_namespace (str) : Robot namespace affecting /joint_states publishing (optional)
+    robot_namespace (str) : Robot namespace affecting
+        joint_states publishing (optional)
     robot_description (str) : A robot description topic (optional, unused)
     """
-    group_name : str
-    joint_names : list[str]
-    # Note: Original code below two are optional, I think they should be required. 
-    default_end_effector : str
-    default_base_link:str 
-    robot_namespace:str = ""
-    robot_description:str = "robot_description"
+
+    group_name: str
+    joint_names: list[str]
+    # Note: Original code below two are optional,
+    # I think they should be required.
+    default_end_effector: str
+    default_base_link: str
+    robot_namespace: str = ""
+    robot_description: str = "robot_description"
 
 
 class MoveGroupInterface:
@@ -82,8 +99,14 @@ class MoveGroupInterface:
 
     """
 
-    def __init__(self, node:Node, robotModel:RobotModel, tf_buffer=None, namespace:str="", wait_for_servers_sec:float=3.0):
-
+    def __init__(
+        self,
+        node: Node,
+        robotModel: RobotModel,
+        tf_buffer=None,
+        namespace: str = "",
+        wait_for_servers_sec: float = 3.0,
+    ):
         """
         Initialize the motion planning interface.
 
@@ -94,7 +117,7 @@ class MoveGroupInterface:
             tf_buffer (tf2_ros.buffer) : Transform buffer (optional, unused)
             namespace (str) : namespace of the move_group node.
                 Used to identify actions and services.
-            wait_for_servers (float) : Time to wait for servers (seconds).
+            wait_for_servers_sec (float) : Time to wait for servers (seconds).
                 Defaults to 3.0 seconds
 
         """
@@ -106,14 +129,15 @@ class MoveGroupInterface:
         self.robot_description_ = robotModel.robot_description  # unused
 
         self.node_ = node
-        self.tf_buffer_ = tf_buffer # Unsued? Why is it in the c++ version?
-        self.namespace_ = namespace #Nice option but also unused 
+        self.tf_buffer_ = tf_buffer  # Unsued? Why is it in the c++ version?
+        self.namespace_ = namespace  # Nice option but also unused
         self.wait_for_servers_sec = wait_for_servers_sec
-        
+
         self.logger_ = self.node_.get_logger()
         self.clock_ = self.node_.get_clock()
-        self.client_cb_group_ = MutuallyExclusiveCallbackGroup() # Change to MECB probablly 
-
+        self.client_cb_group_ = (
+            MutuallyExclusiveCallbackGroup()
+        )  # Change to MECB probablly
 
         self.planning_pipeline_id_ = ""
         self.planner_id_ = ""
@@ -168,44 +192,109 @@ class MoveGroupInterface:
 
         # ACTION CLIENTS
 
-        self.execute_action_client_ = ActionClient(self.node_, ExecuteTrajectory, self.namespace_ + "execute_trajectory", callback_group=self.client_cb_group_)
-        if not self.execute_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_sec):
-            raise RuntimeError("Timeout waiting for execute_trajectory action to become available")
+        self.execute_action_client_ = ActionClient(
+            self.node_,
+            ExecuteTrajectory,
+            self.namespace_ + "execute_trajectory",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.execute_action_client_.wait_for_server(
+            timeout_sec=self.wait_for_servers_sec
+        ):
+            raise RuntimeError(
+                "Timeout waiting for execute_trajectory action to \
+                    become available"
+            )
 
-        self.move_action_client_ = ActionClient(self.node_, MoveGroup, self.namespace_ + "move_action", callback_group=self.client_cb_group_)
-        if not self.move_action_client_.wait_for_server(timeout_sec=self.wait_for_servers_sec):
-            raise RuntimeError("Timeout waiting for move_group action to become available")
+        self.move_action_client_ = ActionClient(
+            self.node_,
+            MoveGroup,
+            self.namespace_ + "move_action",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.move_action_client_.wait_for_server(
+            timeout_sec=self.wait_for_servers_sec
+        ):
+            raise RuntimeError(
+                "Timeout waiting for move_group action to become available"
+            )
 
         # SERVICE CLIENTS
 
-        self.cartesian_path_service_ = self.node_.create_client(GetCartesianPath, self.namespace_ + "compute_cartesian_path", callback_group=self.client_cb_group_)
-        if not self.cartesian_path_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
-            raise RuntimeError("Timeout waiting for compute_cartesian_path service")
-        
-        self.compute_fk_service_ = self.node_.create_client(GetPositionFK, self.namespace_+"compute_fk", callback_group=self.client_cb_group_)
-        if not self.compute_fk_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
+        self.cartesian_path_service_ = self.node_.create_client(
+            GetCartesianPath,
+            self.namespace_ + "compute_cartesian_path",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.cartesian_path_service_.wait_for_service(
+            timeout_sec=self.wait_for_servers_sec
+        ):
+            raise RuntimeError("Timeout waiting for \
+                compute_cartesian_path service")
+
+        self.compute_fk_service_ = self.node_.create_client(
+            GetPositionFK,
+            self.namespace_ + "compute_fk",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.compute_fk_service_.wait_for_service(
+            timeout_sec=self.wait_for_servers_sec
+        ):
             raise RuntimeError("Timeout waiting for compute_fk service")
-        
-        self.compute_ik_service_ = self.node_.create_client(GetPositionIK, self.namespace_+"compute_ik", callback_group=self.client_cb_group_)
-        if not self.compute_ik_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
+
+        self.compute_ik_service_ = self.node_.create_client(
+            GetPositionIK,
+            self.namespace_ + "compute_ik",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.compute_ik_service_.wait_for_service(
+            timeout_sec=self.wait_for_servers_sec
+        ):
             raise RuntimeError("Timeout waiting for compute_ik service")
-        
-        self.get_params_service_ = self.node_.create_client(GetPlannerParams, self.namespace_ + "get_planner_params", callback_group=self.client_cb_group_)
-        if not self.get_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
-            raise RuntimeError("Timeout waiting for get_planner_params service")
-        
-        self.planning_scene_service_ = self.node_.create_client(GetPlanningScene, self.namespace_+"get_planning_scene", callback_group=self.client_cb_group_)
-        if not self.planning_scene_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
-            raise RuntimeError("Timeout waiting for get_planning_scene service")
 
-        self.query_service_ = self.node_.create_client(QueryPlannerInterfaces, self.namespace_ + "query_planner_interface", callback_group=self.client_cb_group_)
-        if not self.query_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
-            raise RuntimeError("Timeout waiting for query_planner_interface service")
+        self.get_params_service_ = self.node_.create_client(
+            GetPlannerParams,
+            self.namespace_ + "get_planner_params",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.get_params_service_.wait_for_service(
+            timeout_sec=self.wait_for_servers_sec
+        ):
+            raise RuntimeError("Timeout waiting for \
+                get_planner_params service")
 
-        self.set_params_service_ = self.node_.create_client(SetPlannerParams, self.namespace_ + "set_planner_params", callback_group=self.client_cb_group_)
-        if not self.set_params_service_.wait_for_service(timeout_sec=self.wait_for_servers_sec):
-            raise RuntimeError("Timeout waiting for set_planner_params service")
+        self.planning_scene_service_ = self.node_.create_client(
+            GetPlanningScene,
+            self.namespace_ + "get_planning_scene",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.planning_scene_service_.wait_for_service(
+            timeout_sec=self.wait_for_servers_sec
+        ):
+            raise RuntimeError("Timeout waiting for \
+                get_planning_scene service")
 
+        self.query_service_ = self.node_.create_client(
+            QueryPlannerInterfaces,
+            self.namespace_ + "query_planner_interface",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.query_service_.wait_for_service(
+            timeout_sec=self.wait_for_servers_sec
+        ):
+            raise RuntimeError("Timeout waiting for \
+                query_planner_interface service")
+
+        self.set_params_service_ = self.node_.create_client(
+            SetPlannerParams,
+            self.namespace_ + "set_planner_params",
+            callback_group=self.client_cb_group_,
+        )
+        if not self.set_params_service_.wait_for_service(
+            timeout_sec=self.wait_for_servers_sec
+        ):
+            raise RuntimeError("Timeout waiting for \
+                set_planner_params service")
 
     """
 
@@ -213,7 +302,7 @@ class MoveGroupInterface:
 
     """
 
-    def setAllowedPlanningTime(self, n:float):
+    def setAllowedPlanningTime(self, n: float):
         """
         Set the maximum time the motion planner is allowed to plan for.
 
@@ -231,10 +320,12 @@ class MoveGroupInterface:
                     "Attempt to set allowed_planning_time to impossible time"
                 )
         else:
-            self.logger_.error("Attempt to set allowed_planning_time to \
-                invalid type")
+            self.logger_.error(
+                "Attempt to set allowed_planning_time to \
+                invalid type"
+            )
 
-    def getAllowedPlanningTime(self)->float:
+    def getAllowedPlanningTime(self) -> float:
         """
         Get the maximum time the motion planner is allowed to plan for.
 
@@ -246,7 +337,7 @@ class MoveGroupInterface:
         """
         return self.allowed_planning_time_
 
-    def setCanLook(self, n:bool):
+    def setCanLook(self, n: bool):
         """
         Flag setter to look for more environment info.
 
@@ -259,7 +350,8 @@ class MoveGroupInterface:
             self.can_look_ = n
         else:
             self.logger_.error("Attempt to set can_look to invalid type")
-    def getCanLook(self)->bool:
+
+    def getCanLook(self) -> bool:
         """
         Flag getter to look for more environment info.
 
@@ -269,8 +361,8 @@ class MoveGroupInterface:
 
         """
         return self.can_look_
-    
-    def setCanReplan(self, n:bool):
+
+    def setCanReplan(self, n: bool):
         """
         Set the flag which allows the planner to replan.
 
@@ -311,35 +403,43 @@ class MoveGroupInterface:
             .string_value
         )
         return default_planner_id
-    
-    def setGoalJointTolerance(self, n:float):
+
+    def setGoalJointTolerance(self, n: float):
         """
         Set the tolerance in joint angles for the robot to reach the goal.
 
         Args:
+        ----
             n (float) : Joint angle tolerance (radians).
+
         """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_joint_tolerance_ = float(n)
         else:
-            self.logger_.error("Attempt to set goal_joint_tolerance to \
-                invalid type")
+            self.logger_.error(
+                "Attempt to set goal_joint_tolerance to \
+                invalid type"
+            )
 
     def getGoalJointTolerance(self):
         """
         Get the tolerance in joint angles for the robot to reach the goal.
 
-        Returns:
+        Returns
+        -------
             goal_joint_tolerance_ (float) : Joint angle tolerance (radians).
+
         """
         return self.goal_joint_tolerance_
-    
-    def setGoalOrientationolerance(self, n:float):
+
+    def setGoalOrientationolerance(self, n: float):
         """
         Set the tolerance in orientation for the robot to reach the goal.
 
         Args:
-            n (float) : Orientation tolerance. 
+        ----
+            n (float) : Orientation tolerance.
+
         """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_orientation_tolerance_ = float(n)
@@ -352,34 +452,42 @@ class MoveGroupInterface:
         """
         Get the tolerance in orientation for the robot to reach the goal.
 
-        Returns:
+        Returns
+        -------
             goal_orientation_tolerance_ (float) : Orientation tolerance.
+
         """
         return self.goal_orientation_tolerance_
-    
-    def setGoalPositionTolerance(self, n:float):
+
+    def setGoalPositionTolerance(self, n: float):
         """
         Set the tolerance in position for the robot to reach the goal.
 
         Args:
-            n (float) : Position tolerance (m). 
+        ----
+            n (float) : Position tolerance (m).
+
         """
         if isinstance(n, int) or isinstance(n, float):
             self.goal_position_tolerance_ = float(n)
         else:
-            self.logger_.error("Attempt to set goal_position_tolerance \
-                to invalid type")
+            self.logger_.error(
+                "Attempt to set goal_position_tolerance \
+                to invalid type"
+            )
 
     def getGoalPositionTolerance(self):
         """
         Get the tolerance in position for the robot to reach the goal.
 
-        Returns:
+        Returns
+        -------
             goal_position_tolerance_ (float) : Position tolerance (m).
+
         """
         return self.goal_position_tolerance_
 
-    def setLookAroundAttemps(self, n:int):
+    def setLookAroundAttemps(self, n: int):
         """
         Set the tolerance in position for the robot to reach the goal.
 
@@ -397,18 +505,22 @@ class MoveGroupInterface:
                 )
             self.look_around_attempts_ = abs(n)
         else:
-            self.logger_.error("Attempt to set look_around_attempts to \
-                invalid type")
+            self.logger_.error(
+                "Attempt to set look_around_attempts to \
+                invalid type"
+            )
 
     def getLookAroundAttemps(self):
         return self.look_around_attempts_
-    
-    def setMaxAccelerationScaling(self, n:float):
+
+    def setMaxAccelerationScaling(self, n: float):
         """
         Set the maximum acceleration scaling of the motion plan.
 
         Args:
-            n (float) : Maximum acceleration scaling factor ranging from 0.01 to 1.
+        ----
+            n (float) : Maximum acceleration scaling factor
+                ranging from 0.01 to 1.
 
         """
         if isinstance(n, float) or isinstance(n, int):
@@ -443,7 +555,7 @@ class MoveGroupInterface:
         """
         return self.max_acceleration_scaling_factor_
 
-    def setMaxVelocityScaling(self, n:float):
+    def setMaxVelocityScaling(self, n: float):
         """
         Set the maximum velocity scaling of the motion plan.
 
@@ -454,9 +566,11 @@ class MoveGroupInterface:
 
         """
         if isinstance(n) or isinstance(n, int):
-            if(n >= 0.01):
-                if(n > 1.0):
-                    self.logger_.info("Maximum velocity factor exceeding 1.0. Limiting.")
+            if n >= 0.01:
+                if n > 1.0:
+                    self.logger_.info(
+                        "Maximum velocity factor exceeding 1.0. Limiting."
+                    )
                     self.max_velocity_scaling_factor_ = 1.0
                 else:
                     self.max_velocity_scaling_factor_ = n
@@ -481,8 +595,8 @@ class MoveGroupInterface:
 
         """
         return self.max_velocity_scaling_factor_
-    
-    def setNumPlanningAttemps(self, n:int):
+
+    def setNumPlanningAttemps(self, n: int):
         """
         Set the number of times the motion plan is computed.
 
@@ -495,10 +609,12 @@ class MoveGroupInterface:
         if isinstance(n, int):
             self.num_planning_attemps_ = n
         else:
-            self.logger_.error("Attempt to set num_planning_attempts \
-                to invalid type")
+            self.logger_.error(
+                "Attempt to set num_planning_attempts \
+                to invalid type"
+            )
 
-    def getNumPlanningAttemps(self)->int:
+    def getNumPlanningAttemps(self) -> int:
         """
         Get the number of times the motion plan is computed.
 
@@ -509,8 +625,8 @@ class MoveGroupInterface:
 
         """
         return self.num_planning_attemps_
-    
-    def setPlannerId(self,n:str):
+
+    def setPlannerId(self, n: str):
         """
         Set the name of the planning algorithm to use.
 
@@ -526,8 +642,8 @@ class MoveGroupInterface:
             self.planner_id_ = n
         else:
             self.logger_.error("Attempt to set planner_id to invalid type")
-    
-    def getPlannerId(self)->str:
+
+    def getPlannerId(self) -> str:
         """
         Get the name of the planning algorithm to use.
 
@@ -540,8 +656,9 @@ class MoveGroupInterface:
 
         """
         return self.planner_id_
-    
-    def setPlannerParams(self, planner_id:str, group:str, params : PlannerParams):
+
+    def setPlannerParams(self, planner_id: str,
+                         group: str, params: PlannerParams):
         """
         Make an asynchronous call to the setPlannerParams service.
 
@@ -562,8 +679,10 @@ class MoveGroupInterface:
         request.params = params
 
         self.set_params_service_.call_async(request)
-    
-    async def getPlannerParams(self, planner_id:str, group:str)->GetPlannerParams.Response:
+
+    async def getPlannerParams(
+        self, planner_id: str, group: str
+    ) -> GetPlannerParams.Response:
         """
         Make an asynchronous call to the getPlannerParams service.
 
@@ -587,7 +706,7 @@ class MoveGroupInterface:
         response = await self.get_params_service_.call_async(request)
         return response
 
-    def setPlanningPipelineID(self, pipeline_id:str):
+    def setPlanningPipelineID(self, pipeline_id: str):
         """
         Set the name of the planning pipeline to use.
 
@@ -603,10 +722,12 @@ class MoveGroupInterface:
                 self.planning_pipeline_id_ = pipeline_id
                 self.planner_id_ = ""
         else:
-            self.logger_.error("Attempt to set planning_pipeline_id to \
-                invalid type")
+            self.logger_.error(
+                "Attempt to set planning_pipeline_id to \
+                invalid type"
+            )
 
-    def getPlanningPipelineID(self)->str:
+    def getPlanningPipelineID(self) -> str:
         """
         Get the name of the planning pipeline to use.
 
@@ -618,8 +739,8 @@ class MoveGroupInterface:
 
         """
         return self.planning_pipeline_id_
-    
-    def setReplanAttempts(self, n:int):
+
+    def setReplanAttempts(self, n: int):
         """
         Set the maximum number of replan attempts.
 
@@ -633,10 +754,12 @@ class MoveGroupInterface:
         if isinstance(n, int):
             self.replan_attempts_ = n
         else:
-            self.logger_.error("Attempt to set replan_attempts to \
-                invalid type")
+            self.logger_.error(
+                "Attempt to set replan_attempts to \
+                invalid type"
+            )
 
-    def getReplanAttempt(self)->int:
+    def getReplanAttempt(self) -> int:
         """
         Get the maximum number of replan attempts.
 
@@ -648,8 +771,8 @@ class MoveGroupInterface:
 
         """
         return self.replan_attempts_
-    
-    def setReplanDelay(self, n:float):
+
+    def setReplanDelay(self, n: float):
         """
         Set the amount of time to wait between replanning attempts.
 
@@ -663,7 +786,7 @@ class MoveGroupInterface:
         else:
             self.logger_.error("Attempt to set replan_delay to invalid type")
 
-    def getReplanDelay(self)->float:
+    def getReplanDelay(self) -> float:
         """
         Get the amount of time to wait between replanning attempts.
 
@@ -674,7 +797,13 @@ class MoveGroupInterface:
         """
         return self.replan_delay_
 
-    def setStartState(self, joint_values:JointState, mdof_joint_values:Optional[MultiDOFJointState]=None, attached_objects:Optional[AttachedCollisionObject]=None, is_diff:Optional[bool] = None):
+    def setStartState(
+        self,
+        joint_values: JointState,
+        mdof_joint_values: Optional[MultiDOFJointState] = None,
+        attached_objects: Optional[AttachedCollisionObject] = None,
+        is_diff: Optional[bool] = None,
+    ):
         """
         Set the robot's start state in the motion plan.
 
@@ -694,7 +823,16 @@ class MoveGroupInterface:
             joint_values, mdof_joint_values, attached_objects, is_diff
         )
 
-    def setWorkspaceParamaters(self, minx:float, maxx:float, miny:float, maxy:float, minz:float, maxz:float, frame:Optional[str]=None):
+    def setWorkspaceParamaters(
+        self,
+        minx: float,
+        maxx: float,
+        miny: float,
+        maxy: float,
+        minz: float,
+        maxz: float,
+        frame: Optional[str] = None,
+    ):
         """
         Set the cuboidal workspace within which the robot is allowed to move.
 
@@ -710,17 +848,16 @@ class MoveGroupInterface:
                 Defaults to base_link_.
 
         """
-        
-        for value in [minx,miny,minz,maxx,maxy,maxz]:
-            if not (isinstance(value, int) or isinstance(value, float) ):
+        for value in [minx, miny, minz, maxx, maxy, maxz]:
+            if not (isinstance(value, int) or isinstance(value, float)):
                 break
-        else: 
-            if(frame is None):
+        else:
+            if frame is None:
                 frame = self.base_link_
 
             self.workspace_parameters_ = WorkspaceParameters()
             self.workspace_parameters_.header.frame_id = frame
-            self.workspace_parameters_.header.stamp = \
+            self.workspace_parameters_.header.stamp =\
                 self.clock_.now().to_msg()
 
             self.workspace_parameters_.min_corner.x = minx
@@ -730,11 +867,13 @@ class MoveGroupInterface:
             self.workspace_parameters_.max_corner.x = maxx
             self.workspace_parameters_.max_corner.y = maxy
             self.workspace_parameters_.max_corner.z = maxz
-            return 
+            return
 
         # Case of any input is not the right type
-        self.logger_().error("Attempt to set workspace parameter coordinate to invalid type")
-    
+        self.logger_().error(
+            "Attempt to set workspace parameter coordinate to invalid type"
+        )
+
     """
 
     Constraint Functions
@@ -748,7 +887,10 @@ class MoveGroupInterface:
 
     # Joint Constraints
 
-    def addJointConstraint(self, joint_name:str, position:float, tol_a=None, tol_b=None, weight=1.0):
+    def addJointConstraint(
+        self, joint_name: str, position: float,
+        tol_a=None, tol_b=None, weight=1.0
+    ):
         """
         Add a constraint on the position of a joint.
 
@@ -778,8 +920,8 @@ class MoveGroupInterface:
         self.joint_constraints_.append(new_jc)
 
     def addJointConstraints(
-        self, joint_states, tol_a_array=None, tol_b_array=None,
-            weight_array=None
+        self, joint_states, tol_a_array=None,
+        tol_b_array=None, weight_array=None
     ):
         """
         Add a constraint on the position of multiple joints.
@@ -798,24 +940,24 @@ class MoveGroupInterface:
         for i in range(len(joint_states.name)):
             if tol_a_array is None:
                 tol_a = None
-            elif isinstance(tol_a_array, int) or isinstance(tol_a_array,
-                                                            float):
+            elif isinstance(tol_a_array, int) or\
+                    isinstance(tol_a_array, float):
                 tol_a = tol_a_array
             else:
                 tol_a = tol_a_array[i]
 
             if tol_b_array is None:
                 tol_b = None
-            elif isinstance(tol_b_array, int) or isinstance(tol_b_array,
-                                                            float):
+            elif isinstance(tol_b_array, int) or\
+                    isinstance(tol_b_array, float):
                 tol_b = tol_b_array
             else:
                 tol_b = tol_b_array[i]
 
             if weight_array is None:
                 weight = 1.0
-            elif isinstance(weight_array, int) or isinstance(weight_array,
-                                                             float):
+            elif isinstance(weight_array, int) or\
+                    isinstance(weight_array, float):
                 weight = weight_array
             else:
                 weight = weight_array[i]
@@ -828,7 +970,16 @@ class MoveGroupInterface:
                 weight=weight,
             )
 
-    async def addJointConstraintFromPose(self, pose_stamped:PoseStamped, link:Optional[str]=None, start_guess:Optional[RobotState]=None, constraints:Optional[Constraints]=None, tol_a=None, tol_b=None, weight=1.0):
+    async def addJointConstraintFromPose(
+        self,
+        pose_stamped: PoseStamped,
+        link: Optional[str] = None,
+        start_guess: Optional[RobotState] = None,
+        constraints: Optional[Constraints] = None,
+        tol_a=None,
+        tol_b=None,
+        weight=1.0,
+    ):
         """
         Add a constraint on the position of multiple joints.
 
@@ -934,8 +1085,10 @@ class MoveGroupInterface:
         self.joint_constraints_ = merged_jc
 
     # Orientation Constraints
-    
-    def addOrientationConstraint(self, pose_stamped:PoseStamped, link=None, tolerance=None, weight=1.0):
+
+    def addOrientationConstraint(
+        self, pose_stamped: PoseStamped, link=None, tolerance=None, weight=1.0
+    ):
         """
         Add an equality constraint on the orientation of a link.
 
@@ -977,7 +1130,14 @@ class MoveGroupInterface:
 
     # Pose Constraints
 
-    def addPoseConstraint(self, pose_stamped:PoseStamped, link=None, lin_tol=None, ang_tol=None, weight=1.0):
+    def addPoseConstraint(
+        self,
+        pose_stamped: PoseStamped,
+        link=None,
+        lin_tol=None,
+        ang_tol=None,
+        weight=1.0,
+    ):
         """
         Add an equality constraint on the pose of a link.
 
@@ -1001,7 +1161,14 @@ class MoveGroupInterface:
             pose_stamped, link=link, tolerance=lin_tol, weight=weight
         )
 
-    def addPoseConstraints(self, pose_stamped_array:list[PoseStamped], link_array:list[str], lin_tol_array=None, ang_tol_array=None, weight_array=1.0):
+    def addPoseConstraints(
+        self,
+        pose_stamped_array: list[PoseStamped],
+        link_array: list[str],
+        lin_tol_array=None,
+        ang_tol_array=None,
+        weight_array=1.0,
+    ):
         """
         Add an equality constraint on the pose of multiple links.
 
@@ -1023,31 +1190,47 @@ class MoveGroupInterface:
         for i in range(len(pose_stamped_array)):
             if lin_tol_array is None:
                 lin_tol = None
-            elif isinstance(lin_tol_array, int) or isinstance(lin_tol_array,
-                                                              float):
+            elif isinstance(lin_tol_array, int) or\
+                    isinstance(lin_tol_array, float):
                 lin_tol = lin_tol_array
             else:
                 lin_tol = lin_tol_array[i]
 
             if ang_tol_array is None:
                 ang_tol = None
-            elif isinstance(ang_tol_array, int) or isinstance(ang_tol_array,
-                                                              float):
+            elif isinstance(ang_tol_array, int) or\
+                    isinstance(ang_tol_array, float):
                 ang_tol = ang_tol_array
             else:
                 ang_tol = ang_tol_array[i]
 
             if weight_array is None:
                 weight = 1.0
-            elif isinstance(weight_array, int) or isinstance(weight_array,
-                                                             float):
+            elif isinstance(weight_array, int) or\
+                    isinstance(weight_array, float):
                 weight = weight_array
             else:
                 weight = weight_array[i]
-            self.addPoseConstraint(pose_stamped_array[i], link=link_array[i], lin_tol=lin_tol, ang_tol=ang_tol, weight=weight)
+            self.addPoseConstraint(
+                pose_stamped_array[i],
+                link=link_array[i],
+                lin_tol=lin_tol,
+                ang_tol=ang_tol,
+                weight=weight,
+            )
 
-    
-    async def addPoseConstraintFromJoints(self, joint_state:list[JointState], base_frame=None, lin_tol_array=None, ang_tol_array=None, weight_array=1.0, link_names=None, mdof_joint_values=None, attached_objects=None, is_diff = None):
+    async def addPoseConstraintFromJoints(
+        self,
+        joint_state: list[JointState],
+        base_frame=None,
+        lin_tol_array=None,
+        ang_tol_array=None,
+        weight_array=1.0,
+        link_names=None,
+        mdof_joint_values=None,
+        attached_objects=None,
+        is_diff=None,
+    ):
         """
         Add an equality constraint on the pose of multiple links.
 
@@ -1099,7 +1282,14 @@ class MoveGroupInterface:
 
     # Position Constraints
 
-    def addPositionConstraint(self, pose_stamped:PoseStamped, link=None, offset=None, tolerance=None, weight=1.0):
+    def addPositionConstraint(
+        self,
+        pose_stamped: PoseStamped,
+        link=None,
+        offset=None,
+        tolerance=None,
+        weight=1.0,
+    ):
         """
         Add an equality constraint on the position of a link.
 
@@ -1156,7 +1346,9 @@ class MoveGroupInterface:
 
     """
 
-    async def addCollisionObject(self, shape:SolidPrimitive, pose_stamped:PoseStamped):
+    async def addCollisionObject(
+        self, shape: SolidPrimitive, pose_stamped: PoseStamped
+    ):
         """
         Add a rigid object to the planning scene.
 
@@ -1185,8 +1377,15 @@ class MoveGroupInterface:
         self.clearAllConstraints()
         self.start_state_ = None
 
-    async def computeFK(self, joint_values, base_frame=None, link_names=None,
-     mdof_joint_values=None, attached_objects=None, is_diff = None)->tuple[PoseStamped,list[str],MoveItErrorCodes]:
+    async def computeFK(
+        self,
+        joint_values,
+        base_frame=None,
+        link_names=None,
+        mdof_joint_values=None,
+        attached_objects=None,
+        is_diff=None,
+    ) -> tuple[PoseStamped, list[str], MoveItErrorCodes]:
         """
         Compute forward kinematics.
 
@@ -1227,13 +1426,18 @@ class MoveGroupInterface:
         )
         req.robot_state = RS
 
-        response:GetPositionFK.Response = await self.compute_fk_service_.call_async(req)
+        response: GetPositionFK.Response = await\
+            self.compute_fk_service_.call_async(
+                req
+            )
         poses = response.pose_stamped
         names = response.fk_link_names
         err = response.error_code
         return poses, names, err
-    
-    async def computeIK(self, pose_stamped, link=None, start_guess=None, constraints=None)->tuple[RobotState,MoveItErrorCodes]:
+
+    async def computeIK(
+        self, pose_stamped, link=None, start_guess=None, constraints=None
+    ) -> tuple[RobotState, MoveItErrorCodes]:
         """
         Compute inverse kinematics.
 
@@ -1271,8 +1475,8 @@ class MoveGroupInterface:
         sol = response.solution
         err = response.error_code
         return sol, err
-    
-    def constructMotionPlanRequest(self)->MotionPlanRequest:
+
+    def constructMotionPlanRequest(self) -> MotionPlanRequest:
         """
         Construct a motion plan request from the path planner's members.
 
@@ -1302,8 +1506,8 @@ class MoveGroupInterface:
         # self.constraints_ = self.mergeJointConstraints()
         request.goal_constraints = [self.constraints_]
         return request
-    
-    def constructPlannerOptions(self, plan_only=True)->PlanningOptions:
+
+    def constructPlannerOptions(self, plan_only=True) -> PlanningOptions:
         """
         Construct a planning options message.
 
@@ -1409,7 +1613,13 @@ class MoveGroupInterface:
                     self.current_state_.velocity.append(msg.velocity[i])
                     self.current_state_.effort.append(msg.effort[i])
 
-    def jointsToRobotState(self, joint_values:JointState, mdof_joint_values:Optional[MultiDOFJointState]=None, attached_objects:Optional[AttachedCollisionObject]=None, is_diff:Optional[bool] = None):
+    def jointsToRobotState(
+        self,
+        joint_values: JointState,
+        mdof_joint_values: Optional[MultiDOFJointState] = None,
+        attached_objects: Optional[AttachedCollisionObject] = None,
+        is_diff: Optional[bool] = None,
+    ):
         """
         Convert a JointState message to a RobotState message.
 
@@ -1425,7 +1635,6 @@ class MoveGroupInterface:
                 be interpreted as a diff with respect to some other scene.
 
         """
-        
         RS = RobotState()
         RS.joint_state = joint_values
         if not (mdof_joint_values is None):
@@ -1436,7 +1645,10 @@ class MoveGroupInterface:
             RS.is_diff = is_diff
         return RS
 
-    async def makeMotionPlanRequest(self, plan_only=True, start_state = None, eef_pose_stamped=None, clean=True)->tuple[MoveGroup.Result,GoalStatus]:
+    async def makeMotionPlanRequest(
+        self, plan_only=True, start_state=None,
+        eef_pose_stamped=None, clean=True
+    ) -> tuple[MoveGroup.Result, GoalStatus]:
         """
         Make a motion plan request to the MoveGroup action.
 
@@ -1465,8 +1677,8 @@ class MoveGroupInterface:
         # If plan_only = False (executing trajectory right after),
         # MUST start at current state
         # If given a start_state, will override the current start_state_.
-        if (start_state is None and self.start_state_ is None)\
-           or not (plan_only):
+        if (start_state is None and self.start_state_ is None) or\
+                not (plan_only):
             self.setStartState(self.current_state_)
         elif not (start_state is None):
             self.setStartState(start_state)
